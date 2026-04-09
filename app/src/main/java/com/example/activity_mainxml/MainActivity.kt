@@ -228,7 +228,7 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.Main + Job())
 
-    private val API_KEY = "AIzaSyBM_69Za936hpHn115ZCDKRKg92xnlC-OU"
+    val API_KEY = BuildConfig.GOOGLE_TTS_API_KEY
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -598,7 +598,7 @@ fun AlarmEditScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    val API_KEY = "AIzaSyBM_69Za936hpHn115ZCDKRKg92xnlC-OU"
+    val API_KEY = BuildConfig.GOOGLE_TTS_API_KEY
     fun playPreview(vId: String) {
         scope.launch(Dispatchers.IO) {
             try {

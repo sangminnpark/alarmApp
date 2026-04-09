@@ -1,6 +1,15 @@
+import java.util.Properties // 파일 상단에 import 추가
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// 1. local.properties 파일 로드 로직 추가
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
 }
 
 android {
@@ -14,7 +23,11 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // 에러 방지를 위해 테스트 러너 라인 삭제됨
+        // 2. BuildConfig에 API 키 주입
+        // local.properties에 설정한 이름을 getProperty 안에 넣습니다.
+        val apiKey = localProperties.getProperty("MAPS_API_KEY") ?: ""
+        buildConfigField("String", "GOOGLE_TTS_API_KEY", "\"$apiKey\"")
+
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -38,6 +51,8 @@ android {
     }
     buildFeatures {
         compose = true
+        // 3. BuildConfig 클래스 생성 활성화 (필수)
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.10"
