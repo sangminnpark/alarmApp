@@ -459,29 +459,32 @@ fun AlarmApp(
     if (isAddingNew || editingAlarm != null) {
         AlarmEditScreen(
             alarm = editingAlarm,
-            onSave = { h, m, msg, days, vName -> // vName 추가
-                val newAlarm = if (isAddingNew) {
-                    AlarmItem(
+            onSave = { h, m, msg, days, vName ->
+                if (isAddingNew) {
+                    val newAlarm = AlarmItem(
                         hour = h,
                         minute = m,
                         message = msg,
                         repeatDays = days,
                         voiceName = vName
                     )
+                    alarmList = alarmList + newAlarm
+                    onSetAlarm(newAlarm)
                 } else {
-                    editingAlarm!!.copy(
-                        hour = h,
-                        minute = m,
-                        message = msg,
-                        repeatDays = days,
-                        voiceName = vName,
-                        isEnabled = true
+                    // [중요] 기존에 등록된 시스템 알람을 먼저 취소합니다.
+                    onCancelAlarm(editingAlarm!!)
+
+                    val updatedAlarm = editingAlarm!!.copy(
+                        hour = h, minute = m, message = msg,
+                        repeatDays = days, voiceName = vName, isEnabled = true
                     )
+                    alarmList = alarmList.map { if (it.id == updatedAlarm.id) updatedAlarm else it }
+
+                    // 새 설정으로 다시 등록합니다.
+                    onSetAlarm(updatedAlarm)
                 }
-                alarmList =
-                    if (isAddingNew) alarmList + newAlarm else alarmList.map { if (it.id == newAlarm.id) newAlarm else it }
-                onSetAlarm(newAlarm)
-                isAddingNew = false; editingAlarm = null
+                isAddingNew = false
+                editingAlarm = null
             },
             onCancel = { isAddingNew = false; editingAlarm = null }
         )
