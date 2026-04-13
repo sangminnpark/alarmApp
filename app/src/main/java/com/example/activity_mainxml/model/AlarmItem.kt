@@ -1,13 +1,10 @@
-package com.example.activity_mainxml.model
-
-import java.util.Random
-
 data class AlarmItem(
-    val id: Int = Random().nextInt(10000),
-    var hour: Int,
-    var minute: Int,
-    var message: String,
-    var isEnabled: Boolean = true,
-    var repeatDays: Set<Int> = emptySet(),
-    var voiceName: String? = null // 초기값은 null
+    val id: Int = (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
+    val hour: Int,
+    val minute: Int,
+    val message: String = "",
+    val isEnabled: Boolean = true,
+    val repeatDays: Set<Int> = emptySet(),
+    val voiceName: String = "",
+    val localFilePath: String? = null // 💡 이 줄을 추가하세요!
 )

@@ -1,8 +1,14 @@
 package com.example.activity_mainxml.ui.theme
 
+import AlarmItem
+import android.content.Context
 import android.media.MediaPlayer
+import android.net.Uri
 import android.util.Base64
+import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,14 +24,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -68,7 +78,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.activity_mainxml.BuildConfig
-import com.example.activity_mainxml.model.AlarmItem
 import com.example.activity_mainxml.model.TtsAudioConfig
 import com.example.activity_mainxml.model.TtsInput
 import com.example.activity_mainxml.model.TtsModel
@@ -79,7 +88,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.util.Calendar
 
 @Composable
 fun AlarmRow(
@@ -153,9 +161,16 @@ fun AlarmRow(
 fun AlarmApp(
     initialAlarms: List<AlarmItem>,
     onSetAlarm: (AlarmItem) -> Unit,
+    customVoices: List<Triple<String, String, String>>,
+    onGenerateVoice: (File, String, String, (String) -> Unit) -> Unit,
     onCancelAlarm: (AlarmItem) -> Unit,
+    onDeleteVoice: (Triple<String, String, String>) -> Unit,
     onSaveToDisk: (List<AlarmItem>) -> Unit
 ) {
+    // 1. 필요한 변수 선언 (Context와 CoroutineScope)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     var alarmList by remember { mutableStateOf(initialAlarms) }
     var editingAlarm by remember { mutableStateOf<AlarmItem?>(null) }
     var isAddingNew by remember { mutableStateOf(false) }
@@ -165,52 +180,78 @@ fun AlarmApp(
     if (isAddingNew || editingAlarm != null) {
         AlarmEditScreen(
             alarm = editingAlarm,
-            onSave = { h, m, msg, days, vName ->
-                if (isAddingNew) {
-                    val newAlarm = AlarmItem(
-                        hour = h,
-                        minute = m,
-                        message = msg,
-                        repeatDays = days,
-                        voiceName = vName
-                    )
-                    alarmList = alarmList + newAlarm
-                    onSetAlarm(newAlarm)
-                } else {
-                    // [중요] 기존에 등록된 시스템 알람을 먼저 취소합니다.
-                    onCancelAlarm(editingAlarm!!)
+            customVoices = customVoices,
+            onDeleteVoice = onDeleteVoice,
+            onGenerateNewVoice = { file, promptText, customName ->
+                onGenerateVoice(file, promptText, customName) { newPath -> }
+            },
+            // ✅ 수정된 onSave 로직
+            onSave = { h, m, msg, days, vId, _, _ ->
+                Log.d("ALARM_DEBUG", "UI에서 onSave 신호가 도달함: vId = $vId")
+                scope.launch {
+                    Log.d("ALARM_DEBUG", "코루틴 내부 진입 성공")
+                    try {
+                        var localPath: String? = null
 
-                    val updatedAlarm = editingAlarm!!.copy(
-                        hour = h, minute = m, message = msg,
-                        repeatDays = days, voiceName = vName, isEnabled = true
-                    )
-                    alarmList = alarmList.map { if (it.id == updatedAlarm.id) updatedAlarm else it }
+                        // 일레븐랩스 보이스인 경우 미리 파일 생성
+                        if (!vId.startsWith("ko-KR-")) {
+                            val amPm = if (h < 12) "오전" else "오후"
+                            val displayHour = if (h % 12 == 0) 12 else h % 12
+                            val fullText = "현재 시간은 ${amPm} ${displayHour}시 ${m}분입니다. $msg"
 
-                    // 새 설정으로 다시 등록합니다.
-                    onSetAlarm(updatedAlarm)
+                            val audioFile =
+                                RetrofitClient.makeElevenLabsVoiceFile(vId, fullText, context)
+                            localPath = audioFile?.absolutePath
+                        }
+
+                        val currentAlarm = if (isAddingNew) {
+                            AlarmItem(
+                                hour = h, minute = m, message = msg,
+                                repeatDays = days,
+                                voiceName = vId,
+                                localFilePath = localPath // AlarmItem에 이 필드 추가 필수!
+                            )
+                        } else {
+                            onCancelAlarm(editingAlarm!!)
+                            editingAlarm!!.copy(
+                                hour = h, minute = m, message = msg,
+                                repeatDays = days, voiceName = vId,
+                                localFilePath = localPath,
+                                isEnabled = true
+                            )
+                        }
+
+                        if (isAddingNew) alarmList = alarmList + currentAlarm
+                        else alarmList =
+                            alarmList.map { if (it.id == currentAlarm.id) currentAlarm else it }
+
+                        onSetAlarm(currentAlarm)
+                        isAddingNew = false
+                        editingAlarm = null
+
+                        Toast.makeText(context, "알람 음성이 준비되었습니다.", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Log.e("ALARM_SAVE", "파일 생성 실패: ${e.message}")
+                        Toast.makeText(context, "음성 생성 실패. 기본 TTS로 설정됩니다.", Toast.LENGTH_SHORT)
+                            .show()
+                    }
                 }
-                isAddingNew = false
-                editingAlarm = null
             },
             onCancel = { isAddingNew = false; editingAlarm = null }
         )
     } else {
+        // ... Scaffold 부분은 기존과 동일하므로 생략 ...
         Scaffold(
             topBar = { CenterAlignedTopAppBar(title = { Text("내 보이스 알람") }) },
             floatingActionButton = {
                 FloatingActionButton(onClick = { isAddingNew = true }) {
-                    Icon(
-                        Icons.Default.Add,
-                        "추가"
-                    )
+                    Icon(Icons.Default.Add, "추가")
                 }
             }
         ) { padding ->
-            LazyColumn(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize()
-            ) {
+            LazyColumn(modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()) {
                 items(alarmList) { alarm ->
                     AlarmRow(
                         alarm = alarm,
@@ -222,7 +263,8 @@ fun AlarmApp(
                         onClick = { editingAlarm = alarm },
                         onDelete = {
                             onCancelAlarm(alarm); alarmList = alarmList.filter { it.id != alarm.id }
-                        })
+                        }
+                    )
                 }
             }
         }
@@ -233,63 +275,54 @@ fun AlarmApp(
 @Composable
 fun AlarmEditScreen(
     alarm: AlarmItem?,
-    onSave: (Int, Int, String, Set<Int>, String) -> Unit,
+    customVoices: List<Triple<String, String, String>>,
+    onDeleteVoice: (Triple<String, String, String>) -> Unit,
+    onGenerateNewVoice: (File, String, String) -> Unit,
+    onSave: (Int, Int, String, Set<Int>, String, File?, String?) -> Unit,
     onCancel: () -> Unit
 ) {
-    // --- [추가] 미리듣기를 위한 상태 및 객체 ---
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val scrollState = rememberScrollState()
+    var customVoiceName by remember { mutableStateOf("") } // 생성할 보이스 이름
+
+    // --- [상태 관리] ---
+    var recordedFile by remember { mutableStateOf<File?>(null) } // 업로드된 파일 저장
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    val API_KEY = BuildConfig.GOOGLE_TTS_API_KEY
-    fun playPreview(vId: String) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                val previewText = "이 목소리로 설정합니다."
-                val request = TtsModel(
-                    input = TtsInput(previewText),
-                    voice = TtsVoice("ko-KR", vId),
-                    audioConfig = TtsAudioConfig()
-                )
-                val response = RetrofitClient.ttsService.synthesizeText(API_KEY, request)
 
-                if (response.isSuccessful && response.body() != null) {
-                    val audioBytes = Base64.decode(response.body()!!.audioContent, Base64.DEFAULT)
-                    val tempFile = File.createTempFile("preview_", "mp3", context.cacheDir)
-                    FileOutputStream(tempFile).use { it.write(audioBytes) }
-
-                    withContext(Dispatchers.Main) {
-                        mediaPlayer?.stop()
-                        mediaPlayer?.release()
-                        mediaPlayer = MediaPlayer().apply {
-                            setDataSource(tempFile.absolutePath)
-                            prepare()
-                            start()
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "미리듣기 재생 실패", Toast.LENGTH_SHORT).show()
-                }
-            }
+    // 파일 선택 런처 (오디오 파일 전용)
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val tempFile = copyUriToTempFile(context, it)
+            recordedFile = tempFile
+            Toast.makeText(context, "파일이 선택되었습니다.", Toast.LENGTH_SHORT).show()
         }
     }
 
     var selectedVoiceId by remember { mutableStateOf<String?>(alarm?.voiceName) }
     var expanded by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
     var amPmOffset by remember { mutableStateOf<Int?>(alarm?.let { if (it.hour < 12) 0 else 12 }) }
     var hour by remember {
         mutableIntStateOf(alarm?.let { if (it.hour % 12 == 0) 12 else it.hour % 12 } ?: 12)
     }
     var minute by remember { mutableIntStateOf(alarm?.minute ?: 0) }
     var message by remember { mutableStateOf(alarm?.message ?: "") }
-
-    // 요일 상태 (MutableSet으로 관리하여 상태 변경이 확실히 반영되도록 함)
     var selectedDays by remember { mutableStateOf(alarm?.repeatDays ?: (1..7).toSet()) }
+
+    val API_KEY = BuildConfig.GOOGLE_API_KEY
     val dayLabels = listOf("월", "화", "수", "목", "금", "토", "일")
 
-    data class VoiceInfo(val id: String, val displayName: String, val gender: String)
+    // --- [보이스 데이터 통합] ---
+    data class VoiceInfo(
+        val id: String,
+        val displayName: String,
+        val gender: String = "",
+        val isCustom: Boolean = false,
+        val previewPath: String? = null
+    )
 
     val googleVoices = listOf(
         VoiceInfo("ko-KR-Chirp3-HD-Achernar", "Achernar", "여성"),
@@ -334,23 +367,86 @@ fun AlarmEditScreen(
         VoiceInfo("ko-KR-Wavenet-C", "Wavenet-C", "남성"),
         VoiceInfo("ko-KR-Wavenet-D", "Wavenet-D", "남성")
     )
-    val currentVoice = googleVoices.find { it.id == selectedVoiceId }
+    val allVoices = googleVoices + customVoices.map {
+        VoiceInfo(
+            id = it.second,
+            displayName = it.first,
+            isCustom = true,
+            previewPath = it.third
+        )
+    }
+    val currentVoice = allVoices.find { it.id == selectedVoiceId }
 
-    // 화면이 닫힐 때 오디오 리소스 해제
-    DisposableEffect(Unit) {
-        onDispose {
-            mediaPlayer?.release()
-            mediaPlayer = null
+    // --- [미리듣기 로직] ---
+    // AlarmEditScreen.kt 내부의 playPreview 함수 수정
+    fun playPreview(voice: VoiceInfo) {
+        // 💡 Dispatchers.IO를 유지하되, 커스텀 보이스는 파일 로딩만 하므로 매우 빨라집니다.
+        scope.launch(Dispatchers.IO) {
+            try {
+                if (voice.isCustom) {
+                    // 💡 [핵심 수정] 서버에 가지 않고, 미리 저장된 previewPath 파일을 재생합니다.
+                    val previewFile = voice.previewPath?.let { File(it) }
+
+                    if (previewFile != null && previewFile.exists()) {
+                        withContext(Dispatchers.Main) {
+                            mediaPlayer?.stop()
+                            mediaPlayer?.release()
+                            mediaPlayer = MediaPlayer().apply {
+                                setDataSource(previewFile.absolutePath)
+                                prepare()
+                                start()
+                            }
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "미리보기 파일을 찾을 수 없습니다.", Toast.LENGTH_SHORT)
+                                .show()
+                        }
+                    }
+                } else {
+                    // 🌐 구글 보이스일 경우 (기존 로직 유지)
+                    val previewText = "이 목소리를 선택합니다."
+                    val request = TtsModel(
+                        input = TtsInput(previewText),
+                        voice = TtsVoice("ko-KR", voice.id),
+                        audioConfig = TtsAudioConfig()
+                    )
+                    val response = RetrofitClient.googleTtsService.synthesizeText(API_KEY, request)
+                    if (response.isSuccessful && response.body() != null) {
+                        val audioBytes =
+                            Base64.decode(response.body()!!.audioContent, Base64.DEFAULT)
+                        val tempFile = File.createTempFile("preview_", "mp3", context.cacheDir)
+                        FileOutputStream(tempFile).use { it.write(audioBytes) }
+
+                        withContext(Dispatchers.Main) {
+                            mediaPlayer?.stop()
+                            mediaPlayer?.release()
+                            mediaPlayer = MediaPlayer().apply {
+                                setDataSource(tempFile.absolutePath)
+                                prepare()
+                                start()
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("PLAY_PREVIEW", "에러 발생: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "미리보기 재생 실패", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
+
+    DisposableEffect(Unit) { onDispose { mediaPlayer?.release(); mediaPlayer = null } }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(24.dp)
-                .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }
-        ) {
+                .verticalScroll(scrollState)
+                .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }) {
             Text(
                 "알람 설정",
                 style = MaterialTheme.typography.headlineSmall,
@@ -358,14 +454,14 @@ fun AlarmEditScreen(
             )
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 드롭다운 부분
+            // --- [1. 목소리 선택 드롭다운] ---
             ExposedDropdownMenuBox(
                 expanded = expanded,
                 onExpandedChange = { expanded = !expanded },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 OutlinedTextField(
-                    value = currentVoice?.let { "${it.displayName} (${it.gender})" }
+                    value = currentVoice?.let { if (it.isCustom) "[내 목소리] ${it.displayName}" else "${it.displayName} (${it.gender})" }
                         ?: "목소리를 선택하세요",
                     onValueChange = {},
                     readOnly = true,
@@ -376,22 +472,150 @@ fun AlarmEditScreen(
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
                 )
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    googleVoices.forEach { voice ->
+                    allVoices.forEach { voice ->
                         DropdownMenuItem(
-                            text = { Text("${voice.displayName} (${voice.gender})") },
+                            text = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // 목소리 이름 표시
+                                    Text(if (voice.isCustom) "🎙 ${voice.displayName}" else "🌐 ${voice.displayName} (${voice.gender})")
+
+                                    // 💡 커스텀 보이스일 때만 삭제 아이콘 표시
+                                    if (voice.isCustom) {
+                                        IconButton(
+                                            onClick = {
+                                                // voice.id(경로)와 displayName을 이용해 삭제 실행
+                                                onDeleteVoice(
+                                                    Triple(
+                                                        voice.displayName,
+                                                        voice.id,
+                                                        voice.previewPath ?: ""
+                                                    )
+                                                )
+                                                expanded = false // 메뉴 닫기
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "삭제",
+                                                tint = Color.Red,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            },
                             onClick = {
                                 selectedVoiceId = voice.id
                                 expanded = false
-                                playPreview(voice.id)
+                                playPreview(voice)
                             }
                         )
                     }
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // --- [2. 파일 업로드 섹션 (녹음 대신)] ---
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "새로운 내 목소리 등록 (ElevenLabs)",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 1. 생성할 보이스 이름 입력
+                    OutlinedTextField(
+                        value = customVoiceName,
+                        onValueChange = { customVoiceName = it },
+                        label = { Text("목소리 이름 (예: 엄마 목소리)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 14.sp)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 2. 파일 선택 및 생성 버튼 레이아웃
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 파일 선택 버튼
+                        OutlinedButton(
+                            onClick = { filePickerLauncher.launch("audio/*") },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                Icons.Default.Upload,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (recordedFile == null) "음성 파일 선택" else "파일 변경")
+                        }
+
+                        // 생성 버튼 (파일이 있을 때만 활성화)
+                        Button(
+                            onClick = {
+                                if (customVoiceName.isBlank()) {
+                                    Toast.makeText(context, "보이스 이름을 입력해주세요.", Toast.LENGTH_SHORT)
+                                        .show()
+                                } else {
+                                    // 💡 promptText를 빈 문자열("")로 넘깁니다.
+                                    onGenerateNewVoice(recordedFile!!, "", customVoiceName)
+                                }
+                            },
+                            enabled = recordedFile != null,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("보이스 생성")
+                        }
+                    }
+
+                    // 3. 선택된 파일 정보 표시
+                    if (recordedFile != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "📎 ${recordedFile!!.name}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { recordedFile = null },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    "삭제",
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 오전/오후 버튼
+            // --- 시간 및 요일 설정 부분 (기존과 동일) ---
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -407,10 +631,7 @@ fun AlarmEditScreen(
                     ) { Text(label) }
                 }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 시간 입력 (TimeInputUnit 호출)
+            Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -434,10 +655,7 @@ fun AlarmEditScreen(
                     label = "분"
                 )
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 요일 선택 (버그 수정: clickable 사용)
+            Spacer(modifier = Modifier.height(16.dp))
             Text("반복 요일", style = MaterialTheme.typography.bodyMedium)
             Row(
                 modifier = Modifier
@@ -446,50 +664,28 @@ fun AlarmEditScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 dayLabels.forEachIndexed { index, label ->
-                    // 1. 시스템 요일 숫자로 변환 (월요일 index 0 -> 시스템 2 / 일요일 index 6 -> 시스템 1)
                     val systemDayInt = when (index) {
-                        6 -> Calendar.SUNDAY      // 일요일 (6 -> 1)
-                        0 -> Calendar.MONDAY      // 월요일 (0 -> 2)
-                        1 -> Calendar.TUESDAY     // 화요일 (1 -> 3)
-                        2 -> Calendar.WEDNESDAY   // 수요일 (2 -> 4)
-                        3 -> Calendar.THURSDAY    // 목요일 (3 -> 5)
-                        4 -> Calendar.FRIDAY      // 금요일 (4 -> 6)
-                        5 -> Calendar.SATURDAY    // 토요일 (5 -> 7)
-                        else -> index + 2
+                        6 -> 1; else -> index + 2
                     }
-
                     val isSelected = selectedDays.contains(systemDayInt)
-
                     Surface(
                         onClick = {
-                            // 2. 변환된 시스템 숫자를 Set에 넣거나 뺌
-                            selectedDays = if (isSelected) {
-                                selectedDays - systemDayInt
-                            } else {
-                                selectedDays + systemDayInt
-                            }
+                            selectedDays =
+                                if (isSelected) selectedDays - systemDayInt else selectedDays + systemDayInt
                         },
-                        modifier = Modifier.size(40.dp),
-                        shape = androidx.compose.foundation.shape.CircleShape,
+                        modifier = Modifier.size(40.dp), shape = CircleShape,
                         color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = if (isSelected) Color.White else Color.Black
-                    ) {
-                        Box(contentAlignment = Alignment.Center) { Text(label, fontSize = 12.sp) }
-                    }
+                    ) { Box(contentAlignment = Alignment.Center) { Text(label, fontSize = 12.sp) } }
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             OutlinedTextField(
                 value = message,
                 onValueChange = { message = it },
                 label = { Text("보이스 메시지") },
                 modifier = Modifier.fillMaxWidth()
             )
-
             Spacer(modifier = Modifier.weight(1f))
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -498,23 +694,44 @@ fun AlarmEditScreen(
                 Button(
                     onClick = {
                         if (amPmOffset == null) {
-                            Toast.makeText(context, "오전/오후를 선택해주세요!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "오전/오후 선택!", Toast.LENGTH_SHORT).show()
                         } else if (selectedVoiceId == null) {
-                            Toast.makeText(context, "목소리를 선택해주세요!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "목소리 선택!", Toast.LENGTH_SHORT).show()
                         } else {
+                            // 💡 [추가] 로그를 찍어서 이 함수가 호출되는지 확인합니다.
+                            Log.d("ALARM_DEBUG", "저장 버튼 클릭됨: voiceId = $selectedVoiceId")
+
+                            val finalHour = if (hour == 12) amPmOffset!! else amPmOffset!! + hour
+
+                            // 상위 AlarmApp으로 데이터를 넘깁니다.
                             onSave(
-                                if (hour == 12) amPmOffset!! else amPmOffset!! + hour,
-                                minute, message, selectedDays, selectedVoiceId!!
+                                finalHour,
+                                minute,
+                                message,
+                                selectedDays,
+                                selectedVoiceId!!,
+                                null,
+                                null
                             )
                         }
                     },
-                    modifier = Modifier.weight(1f),
-                    // enabled = true로 변경하여 클릭을 유도하고 메시지를 보여줌
-                    enabled = true
+                    modifier = Modifier.weight(1f)
                 ) { Text("저장") }
             }
         }
     }
+}
+
+// 💡 Uri를 File로 변환해주는 유틸리티 함수 (파일 하단에 추가)
+fun copyUriToTempFile(context: Context, uri: Uri): File {
+    val inputStream = context.contentResolver.openInputStream(uri)
+    val tempFile = File(context.cacheDir, "temp_audio_${System.currentTimeMillis()}.wav")
+    inputStream?.use { input ->
+        tempFile.outputStream().use { output ->
+            input.copyTo(output)
+        }
+    }
+    return tempFile
 }
 
 @Composable

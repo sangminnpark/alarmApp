@@ -1,12 +1,12 @@
 package com.example.activity_mainxml.receiver
 
+import AlarmItem
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.example.activity_mainxml.AlarmScheduler
 import com.example.activity_mainxml.data.AlarmRepository.ALARM_KEY
 import com.example.activity_mainxml.data.AlarmRepository.PREFS_NAME
-import com.example.activity_mainxml.model.AlarmItem
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
