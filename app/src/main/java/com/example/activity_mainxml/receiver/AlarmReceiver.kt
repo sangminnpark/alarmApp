@@ -30,7 +30,8 @@ class AlarmReceiver : BroadcastReceiver() {
             putExtra("voiceId", voiceId) // 위에서 꺼낸 voiceId 변수 사용
             putExtra("localFilePath", localFilePath)
             putExtra("alarmId", alarmId)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags =
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
 
         // 3. Activity 실행

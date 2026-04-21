@@ -114,7 +114,16 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 },
-                onCancelAlarm = { alarm -> AlarmScheduler.cancel(this, alarm) },
+                onCancelAlarm = { alarm ->
+                    AlarmScheduler.cancel(this, alarm)
+                    alarm.localFilePath?.let { path ->
+                        val file = File(path)
+                        if (file.exists()) {
+                            val isDeleted = file.delete()
+                            Log.d("ALARM_DEBUG", "알람 파일 삭제 여부: $isDeleted, 경로: $path")
+                        }
+                    }
+                },
                 onSaveToDisk = { list -> saveAlarms(this, list) }
             )
         }

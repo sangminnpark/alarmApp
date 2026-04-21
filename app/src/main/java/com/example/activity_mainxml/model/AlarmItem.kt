@@ -5,6 +5,7 @@ data class AlarmItem(
     val message: String = "",
     val isEnabled: Boolean = true,
     val repeatDays: Set<Int> = emptySet(),
+    val voiceId: String = "",
     val voiceName: String = "",
-    val localFilePath: String? = null // 💡 이 줄을 추가하세요!
+    val localFilePath: String? = null
 )

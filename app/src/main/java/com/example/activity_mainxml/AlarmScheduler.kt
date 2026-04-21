@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import com.example.activity_mainxml.network.RetrofitClient
+import com.example.activity_mainxml.network.VoiceRepository
 import com.example.activity_mainxml.receiver.AlarmReceiver
 import java.io.File
 import java.util.Calendar
@@ -28,12 +29,12 @@ object AlarmScheduler {
     ): Pair<String, File>? {
         return try {
             // 1. 일레븐랩스에 목소리 등록하고 voiceId 받기
-            val voiceId = RetrofitClient.addElevenLabsVoice(recordFile, voiceName)
+            val voiceId = VoiceRepository.addElevenLabsVoice(recordFile, voiceName)
 
             if (voiceId != null) {
                 // 2. 등록된 voiceId로 미리보기 파일 생성
                 val previewText = "이 목소리를 선택합니다."
-                val responseFile = RetrofitClient.makeElevenLabsVoiceFile(
+                val responseFile = VoiceRepository.makeElevenLabsVoiceFile(
                     voiceId = voiceId,
                     targetText = previewText,
                     context = context
