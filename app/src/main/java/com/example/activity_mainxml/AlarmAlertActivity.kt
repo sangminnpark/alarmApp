@@ -1,6 +1,5 @@
 package com.example.activity_mainxml
 
-import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -12,22 +11,13 @@ import android.util.Base64
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -61,16 +51,33 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val scope = CoroutineScope(Dispatchers.Main + Job())
 
     private val API_KEY = BuildConfig.GOOGLE_API_KEY
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
+    private var currentTime by mutableStateOf("00:00")
+
+    // 캐싱을 위한 변수들
+    private var isFirstPlay = true
+    private var lastMinute = -1
+    private var lastAudio: ByteArray? = null
+    private var lastElevenFile: File? = null
+
+    private fun acquireWakeLock() {
+        val powerManager = getSystemService(POWER_SERVICE) as android.os.PowerManager
+        wakeLock = powerManager.newWakeLock(
+            android.os.PowerManager.PARTIAL_WAKE_LOCK,
+            "AlarmApp:WakeLockTag"
+        )
+        wakeLock?.acquire(10 * 60 * 1000L)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. 데이터 추출
         message = intent.getStringExtra("msg")?.trim() ?: ""
         voiceId = intent.getStringExtra("voiceId")
         alarmId = intent.getIntExtra("alarmId", -1)
 
         setupLockScreenVisible()
+        acquireWakeLock()
 
         setContent {
             Surface(
@@ -87,14 +94,10 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     Icon(Icons.Default.Notifications, null, modifier = Modifier.size(100.dp))
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    val calendar = Calendar.getInstance()
                     Text(
-                        text = String.format(
-                            "%02d:%02d",
-                            calendar.get(Calendar.HOUR_OF_DAY),
-                            calendar.get(Calendar.MINUTE)
-                        ),
-                        style = MaterialTheme.typography.displayLarge, fontWeight = FontWeight.Black
+                        text = currentTime,
+                        style = MaterialTheme.typography.displayLarge,
+                        fontWeight = FontWeight.Black
                     )
 
                     if (message.isNotBlank()) {
@@ -118,16 +121,9 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            val result = tts?.setLanguage(Locale.KOREAN)
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                Log.e("TTS", "한국어를 지원하지 않습니다.")
-            }
-
-            // ⭐️ 중요: TTS 준비가 끝난 "이 시점"에 알람 소리를 시작합니다.
+            tts?.language = Locale.KOREAN
             playAlarmVoice()
         } else {
-            Log.e("TTS", "초기화 실패")
-            // TTS가 실패하더라도 MediaPlayer 파일 재생은 시도해야 하므로 호출
             playAlarmVoice()
         }
     }
@@ -136,8 +132,7 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
-            val keyguardManager =
-                getSystemService(KEYGUARD_SERVICE) as android.app.KeyguardManager
+            val keyguardManager = getSystemService(KEYGUARD_SERVICE) as android.app.KeyguardManager
             keyguardManager.requestDismissKeyguard(this, null)
         } else {
             window.addFlags(
@@ -152,53 +147,96 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private fun playAlarmVoice() {
         if (!isAlarmActive) return
 
+        // ⭐️ 여기서 기준 시간(Minute)을 한 번만 구합니다.
+        val calendar = Calendar.getInstance()
+        val currentMin = calendar.get(Calendar.MINUTE)
+        val hourOfDay = calendar.get(Calendar.HOUR_OF_DAY)
+        val amPm = if (hourOfDay < 12) "오전" else "오후"
+        val displayHour = calendar.get(Calendar.HOUR).let { if (it == 0) 12 else it }
+
+        // UI 업데이트
+        currentTime = String.format("%02d:%02d", hourOfDay, currentMin)
+
+        // 음성 문구 생성
+        val timeText = "현재 시간은 ${amPm} ${displayHour}시 ${currentMin}분입니다."
+        val fullText = if (message.isNotBlank()) "$timeText $message" else timeText
+
         val localFilePath = intent.getStringExtra("localFilePath")
         val file = localFilePath?.let { File(it) }
 
-        // 1. 현재 시간 문구 생성
-        val calendar = Calendar.getInstance()
-        val amPm = if (calendar.get(Calendar.HOUR_OF_DAY) < 12) "오전" else "오후"
-        val hour = calendar.get(Calendar.HOUR).let { if (it == 0) 12 else it }
-        val min = calendar.get(Calendar.MINUTE)
-
-        // 💡 메시지가 있으면 붙이고, 없으면 시간만 말하도록 설정
-        val timeText = "현재 시간은 ${amPm} ${hour}시 ${min}분입니다."
-        val fullText = if (message.isNotBlank()) "$timeText $message" else timeText
-
-        if (file != null && file.exists()) {
-            // 1. 일레븐랩스 등 미리 생성된 파일이 있는 경우 (이미 파일에 음성이 고정됨)
-            Log.d("ALARM_DEBUG", "로컬 파일 재생: ${file.name}")
+        // [케이스 1] 첫 재생 시 로컬 파일이 있다면 우선 실행
+        if (isFirstPlay && file != null && file.exists()) {
+            Log.d("ALARM_DEBUG", "첫 재생: 로컬 파일 실행")
+            isFirstPlay = false
             playCustomVoiceFile(file)
-        } else if (voiceId != null && voiceId!!.startsWith("ko-KR-")) {
-            // 2. 구글 보이스인 경우 (실시간 생성)
-            Log.d("ALARM_DEBUG", "구글 TTS 호출: $fullText")
-            callGoogleTts(fullText, voiceId!!)
+            return
+        }
+
+        // [케이스 2 & 3] 실시간 API 호출 (currentMin 전달)
+        if (voiceId != null) {
+            if (voiceId!!.startsWith("ko-KR-")) {
+                callGoogleTts(fullText, voiceId!!, currentMin)
+            } else {
+                callElevenLabsTts(fullText, voiceId!!, currentMin)
+            }
         } else {
-            // 3. 마지막 수단 기본 TTS
-            Log.e("ALARM_DEBUG", "기본 TTS 실행: $fullText")
-            fallbackToDefaultTts(fullText) // message 대신 완성된 fullText를 전달
+            fallbackToDefaultTts(fullText)
         }
     }
 
-    // ✅ 일레븐랩스 API를 호출하여 "사용자 메시지"가 담긴 음성을 실시간 생성
-    private fun callElevenLabsTts(text: String, vId: String) {
+    private fun callElevenLabsTts(text: String, vId: String, currentMin: Int) {
+        // ⭐️ 전달받은 currentMin으로 캐시 확인
+        if (currentMin == lastMinute && lastElevenFile != null && lastElevenFile!!.exists()) {
+            Log.d("ALARM_DEBUG", "일레븐랩스 캐시 사용: $currentMin 분")
+            playCustomVoiceFile(lastElevenFile!!)
+            return
+        }
+
         scope.launch {
             try {
-                // RetrofitClient를 통해 일레븐랩스 서버에서 음성 파일 생성
-                // text 인자에 우리가 만든 fullText가 들어갑니다.
                 val audioFile = VoiceRepository.makeElevenLabsVoiceFile(
                     voiceId = vId,
                     targetText = text,
                     context = this@AlarmAlertActivity
                 )
-
                 if (audioFile != null && audioFile.exists()) {
+                    lastElevenFile = audioFile
+                    lastMinute = currentMin
                     playCustomVoiceFile(audioFile)
                 } else {
-                    fallbackToDefaultTts(text) // 실패 시 기본 TTS로 백업
+                    fallbackToDefaultTts(text)
                 }
             } catch (e: Exception) {
-                Log.e("AlarmAlert", "일레븐랩스 재생 실패: ${e.localizedMessage}")
+                fallbackToDefaultTts(text)
+            }
+        }
+    }
+
+    private fun callGoogleTts(text: String, vId: String, currentMin: Int) {
+        // ⭐️ 전달받은 currentMin으로 캐시 확인
+        if (currentMin == lastMinute && lastAudio != null) {
+            Log.d("ALARM_DEBUG", "구글 캐시 사용: $currentMin 분")
+            playAudio(lastAudio!!)
+            return
+        }
+
+        scope.launch {
+            try {
+                val request = TtsModel(
+                    input = TtsInput(text),
+                    voice = TtsVoice("ko-KR", vId),
+                    audioConfig = TtsAudioConfig()
+                )
+                val response = RetrofitClient.googleTtsService.synthesizeText(API_KEY, request)
+                if (response.isSuccessful && response.body() != null) {
+                    val audioBytes = Base64.decode(response.body()!!.audioContent, Base64.DEFAULT)
+                    lastAudio = audioBytes
+                    lastMinute = currentMin
+                    playAudio(audioBytes)
+                } else {
+                    fallbackToDefaultTts(text)
+                }
+            } catch (e: Exception) {
                 fallbackToDefaultTts(text)
             }
         }
@@ -210,41 +248,15 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(file.absolutePath)
                 setAudioStreamType(AudioManager.STREAM_ALARM)
-                isLooping = false // ⭐️ 실시간 시간 반영을 위해 루핑은 끕니다.
+                isLooping = false
                 prepare()
                 start()
-
-                // ⭐️ 소리가 끝나면 다시 playAlarmVoice를 호출하여 시간을 새로 계산하게 함
                 setOnCompletionListener {
-                    if (isAlarmActive) {
-                        // 1초 정도 쉬었다가 다음 시간을 읽어줌
-                        handler.postDelayed({ playAlarmVoice() }, 1000)
-                    }
+                    if (isAlarmActive) handler.postDelayed({ playAlarmVoice() }, 1000)
                 }
             }
         } catch (e: Exception) {
             fallbackToDefaultTts(message)
-        }
-    }
-
-    private fun callGoogleTts(text: String, vId: String) {
-        scope.launch {
-            try {
-                val request = TtsModel(
-                    input = TtsInput(text),
-                    voice = TtsVoice("ko-KR", vId),
-                    audioConfig = TtsAudioConfig()
-                )
-                val response = RetrofitClient.googleTtsService.synthesizeText(API_KEY, request)
-                if (response.isSuccessful && response.body() != null) {
-                    val audioBytes = Base64.decode(response.body()!!.audioContent, Base64.DEFAULT)
-                    playAudio(audioBytes)
-                } else {
-                    fallbackToDefaultTts(text)
-                }
-            } catch (e: Exception) {
-                fallbackToDefaultTts(text)
-            }
         }
     }
 
@@ -257,14 +269,11 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(tempFile.absolutePath)
                 setAudioStreamType(AudioManager.STREAM_ALARM)
-                isLooping = false // ⭐️ 루핑 끔
+                isLooping = false
                 prepare()
                 start()
-
                 setOnCompletionListener {
-                    if (isAlarmActive) {
-                        handler.postDelayed({ playAlarmVoice() }, 1000)
-                    }
+                    if (isAlarmActive) handler.postDelayed({ playAlarmVoice() }, 1000)
                 }
             }
         } catch (e: Exception) {
@@ -279,16 +288,12 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
             override fun onDone(utteranceId: String?) {
-                // 소리가 끝나면 다시 재생 (사용자가 종료 버튼을 누르기 전까지)
-                if (isAlarmActive) {
-                    handler.postDelayed({ fallbackToDefaultTts(text) }, 2000)
-                }
+                if (isAlarmActive) handler.postDelayed({ playAlarmVoice() }, 2000)
             }
 
             override fun onError(utteranceId: String?) {}
         })
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "AlarmID")
-        // 기본 TTS는 반복 로직을 위해 UtteranceProgressListener가 추가로 필요할 수 있습니다.
     }
 
     private fun stopAlarm() {
@@ -299,6 +304,10 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         mediaPlayer = null
         tts?.stop()
         scope.cancel()
+        if (wakeLock?.isHeld == true) {
+            wakeLock?.release()
+            wakeLock = null
+        }
     }
 
     override fun onDestroy() {
@@ -306,29 +315,27 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         tts?.shutdown()
         super.onDestroy()
     }
-    // AlarmAlertActivity.kt 내부에 추가
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent) // 새로 들어온 인텐트로 교체
+        setIntent(intent)
+        isAlarmActive = true
 
-        // 1. 기존 알람/소리 즉시 중단
+        // 캐시 및 플래그 초기화
+        isFirstPlay = true
+        lastMinute = -1
+        lastAudio = null
+        lastElevenFile = null
+
         stopAlarmVoiceOnly()
 
-        // 2. 새로운 데이터 추출
         message = intent.getStringExtra("msg")?.trim() ?: ""
         voiceId = intent.getStringExtra("voiceId")
         alarmId = intent.getIntExtra("alarmId", -1)
 
-        // 3. UI 갱신 (Compose의 경우 상태 변수를 사용하면 좋지만,
-        // 가장 확실한 방법은 소리를 다시 재생하는 것)
-        Log.d("ALARM_DEBUG", "새로운 알람 수신! ID: $alarmId, 메시지: $message")
-
-        // 4. 새로운 알람으로 다시 시작
         playAlarmVoice()
     }
 
-    // stopAlarm()에서 finish()만 뺀 버전 (기존 소리만 끄기 위함)
     private fun stopAlarmVoiceOnly() {
         handler.removeCallbacksAndMessages(null)
         mediaPlayer?.stop()

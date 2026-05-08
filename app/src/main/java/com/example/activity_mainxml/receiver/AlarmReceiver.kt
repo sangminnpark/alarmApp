@@ -3,13 +3,19 @@ package com.example.activity_mainxml.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
 import com.example.activity_mainxml.AlarmAlertActivity
 import java.util.Calendar
 
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val days = intent.getIntegerArrayListExtra("repeatDays") ?: arrayListOf()
+        val days = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getIntegerArrayListExtra("repeatDays") ?: arrayListOf()
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getIntegerArrayListExtra("repeatDays") ?: arrayListOf()
+        }
         val today = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
 
         // 요일 반복 체크 (설정된 요일이 아니면 종료)
@@ -30,8 +36,9 @@ class AlarmReceiver : BroadcastReceiver() {
             putExtra("voiceId", voiceId) // 위에서 꺼낸 voiceId 변수 사용
             putExtra("localFilePath", localFilePath)
             putExtra("alarmId", alarmId)
-            flags =
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
 
         // 3. Activity 실행
