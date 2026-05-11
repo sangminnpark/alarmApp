@@ -16,12 +16,6 @@ import java.util.Calendar
 
 object AlarmScheduler {
 
-    /**
-     * ✅ [수정] 일레븐랩스 방식으로 변경
-     * 1. 녹음 파일을 일레븐랩스에 등록하여 voiceId를 가져옵니다.
-     * 2. 해당 voiceId로 "이 목소리를 선택합니다"라는 미리보기 파일을 만듭니다.
-     * @return Pair(보이스ID, 생성된파일)
-     */
     suspend fun requestElevenLabsVoice(
         context: Context,
         recordFile: File,
@@ -50,9 +44,6 @@ object AlarmScheduler {
         }
     }
 
-    /**
-     * 안드로이드 시스템에 알람을 등록하는 함수
-     */
     fun schedule(context: Context, alarm: AlarmItem) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
