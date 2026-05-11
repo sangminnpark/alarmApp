@@ -1,6 +1,7 @@
 *.iml
 .gradle
 /local.properties
+.idea/
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
@@ -13,3 +14,14 @@
 .externalNativeBuild
 .cxx
 local.properties
+# 가상 기기 및 로그 관련
+*.hprof
+.display
+
+# 윈도우 시스템 파일
+Thumbs.db
+desktop.ini
+
+# 빌드 캐시 및 임시 파일
+.kotlin
+.navigation

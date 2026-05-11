@@ -76,6 +76,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Calendar
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -91,17 +92,27 @@ fun AlarmEditScreen(
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val scrollState = rememberScrollState()
+    val calendar = remember { Calendar.getInstance() }
+    val currentHour24 = calendar.get(Calendar.HOUR_OF_DAY)
 
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isSaving by remember { mutableStateOf(false) }
 
     var selectedVoiceId by remember { mutableStateOf<String?>(alarm?.voiceName) }
     var expanded by remember { mutableStateOf(false) }
-    var amPmOffset by remember { mutableStateOf<Int?>(alarm?.let { if (it.hour < 12) 0 else 12 }) }
-    var hour by remember {
-        mutableIntStateOf(alarm?.let { if (it.hour % 12 == 0) 12 else it.hour % 12 } ?: 12)
+    var amPmOffset by remember {
+        mutableStateOf<Int?>(alarm?.let { if (it.hour < 12) 0 else 12 }
+            ?: if (currentHour24 < 12) 0 else 12)
     }
-    var minute by remember { mutableIntStateOf(alarm?.minute ?: 0) }
+    var hour by remember {
+        mutableIntStateOf(
+            alarm?.let { if (it.hour % 12 == 0) 12 else it.hour % 12 }
+                ?: (if (currentHour24 % 12 == 0) 12 else currentHour24 % 12)
+        )
+    }
+    var minute by remember {
+        mutableIntStateOf(alarm?.minute ?: calendar.get(Calendar.MINUTE))
+    }
     var message by remember { mutableStateOf(alarm?.message ?: "") }
     var selectedDays by remember { mutableStateOf(alarm?.repeatDays ?: (1..7).toSet()) }
 
@@ -209,8 +220,7 @@ fun AlarmEditScreen(
                         .menuAnchor()
                         .fillMaxWidth(),
                     label = { Text("목소리 선택 (필수)") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
-                )
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) })
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     allVoices.forEach { voice ->
                         DropdownMenuItem(
@@ -219,8 +229,7 @@ fun AlarmEditScreen(
                                 selectedVoiceId = voice.id
                                 expanded = false
                                 playPreview(voice)
-                            }
-                        )
+                            })
                     }
                 }
             }
@@ -290,7 +299,8 @@ fun AlarmEditScreen(
                             selectedDays =
                                 if (isSelected) selectedDays - systemDayInt else selectedDays + systemDayInt
                         },
-                        modifier = Modifier.size(40.dp), shape = CircleShape,
+                        modifier = Modifier.size(40.dp),
+                        shape = CircleShape,
                         color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = if (isSelected) Color.White else Color.Black
                     ) { Box(contentAlignment = Alignment.Center) { Text(label, fontSize = 12.sp) } }
@@ -308,9 +318,7 @@ fun AlarmEditScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedButton(
-                    onClick = onCancel,
-                    modifier = Modifier.weight(1f),
-                    enabled = !isSaving
+                    onClick = onCancel, modifier = Modifier.weight(1f), enabled = !isSaving
                 ) { Text("취소") }
                 Button(
                     onClick = {
@@ -333,17 +341,9 @@ fun AlarmEditScreen(
                         isSaving = true
                         val finalHour = if (hour == 12) amPmOffset!! else amPmOffset!! + hour
                         onSave(
-                            finalHour,
-                            minute,
-                            message,
-                            selectedDays,
-                            selectedVoiceId!!,
-                            null,
-                            null
+                            finalHour, minute, message, selectedDays, selectedVoiceId!!, null, null
                         )
-                    },
-                    modifier = Modifier.weight(1f),
-                    enabled = !isSaving
+                    }, modifier = Modifier.weight(1f), enabled = !isSaving
                 ) { Text(if (isSaving) "저장 중..." else "저장") }
             }
         }
@@ -384,8 +384,7 @@ fun TimeInputUnit(
         }) { Icon(Icons.Default.KeyboardArrowUp, null, modifier = Modifier.size(32.dp)) }
 
         BasicTextField(
-            value = textFieldValue,
-            onValueChange = { input ->
+            value = textFieldValue, onValueChange = { input ->
                 if (input.all { it.isDigit() } && input.length <= 2) {
                     if (input.isEmpty()) {
                         isTyping = true
@@ -405,9 +404,7 @@ fun TimeInputUnit(
                     else {
                         // 토스트 메시지 출력
                         Toast.makeText(
-                            context,
-                            "${range.last}${label} 이하로 설정해주세요.",
-                            Toast.LENGTH_SHORT
+                            context, "${range.last}${label} 이하로 설정해주세요.", Toast.LENGTH_SHORT
                         ).show()
 
                         // 💡 잘못된 입력 시 00(또는 범위 시작값)으로 되돌리기
@@ -415,16 +412,14 @@ fun TimeInputUnit(
                         val resetValue = range.first
                         onValueChange(resetValue)
                         textFieldValue = if (isMinute) String.format(
-                            "%02d",
-                            resetValue
+                            "%02d", resetValue
                         ) else resetValue.toString()
 
                         // 입력이 틀렸으므로 포커스 해제 (선택 사항)
                         focusManager.clearFocus()
                     }
                 }
-            },
-            modifier = Modifier
+            }, modifier = Modifier
                 .width(60.dp)
                 .onFocusChanged { focusState ->
                     if (!focusState.isFocused) {
@@ -432,23 +427,18 @@ fun TimeInputUnit(
                         textFieldValue =
                             if (isMinute) String.format("%02d", value) else value.toString()
                     }
-                },
-            textStyle = TextStyle(
+                }, textStyle = TextStyle(
                 fontSize = 32.sp,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold
-            ),
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Number,
-                imeAction = ImeAction.Done
-            ),
-            keyboardActions = KeyboardActions(onDone = {
+            ), keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number, imeAction = ImeAction.Done
+            ), keyboardActions = KeyboardActions(onDone = {
                 isTyping = false
                 textFieldValue = if (isMinute) String.format("%02d", value) else value.toString()
                 focusManager.clearFocus()
-            }),
-            singleLine = true
+            }), singleLine = true
         )
 
         IconButton(onClick = {
