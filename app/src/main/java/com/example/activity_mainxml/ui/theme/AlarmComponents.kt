@@ -122,9 +122,6 @@ fun AlarmApp(
                     onDeleteVoice(voiceTriple)
                 }
             },
-            onGenerateNewVoice = { file, promptText, customName ->
-                onGenerateVoice(file, promptText, customName) { _ -> }
-            },
             onSave = { h, m, msg, days, vId, _, _ ->
                 scope.launch {
                     try {
@@ -209,9 +206,11 @@ fun AlarmApp(
                     Text(text = "설정된 알람이 없습니다.", color = Color.Gray)
                 }
             } else {
-                LazyColumn(modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize()) {
+                LazyColumn(
+                    modifier = Modifier
+                        .padding(padding)
+                        .fillMaxSize()
+                ) {
                     // AlarmApp 내부의 LazyColumn 부분
                     items(alarmList) { alarm ->
                         AlarmRow(

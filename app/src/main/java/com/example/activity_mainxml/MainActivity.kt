@@ -32,7 +32,6 @@ class MainActivity : ComponentActivity() {
 
         // 권한 체크
         checkSystemPermissions()
-        checkAudioPermission()
 
         val initialAlarms = loadAlarms(this)
 
@@ -155,15 +154,6 @@ class MainActivity : ComponentActivity() {
     }
 
     // --- [권한 로직 유지] ---
-
-    private fun checkAudioPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 102)
-        }
-    }
-
     private fun checkSystemPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager

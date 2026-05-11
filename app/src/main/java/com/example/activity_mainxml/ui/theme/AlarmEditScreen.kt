@@ -61,6 +61,8 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -84,10 +86,12 @@ fun AlarmEditScreen(
     alarm: AlarmItem?,
     customVoices: List<Triple<String, String, String>>,
     onDeleteVoice: (Triple<String, String, String>) -> Unit,
-    onGenerateNewVoice: (File, String, String) -> Unit,
     onSave: (Int, Int, String, Set<Int>, String, File?, String?) -> Unit,
     onCancel: () -> Unit
 ) {
+    BackHandler {
+        onCancel()
+    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -224,7 +228,33 @@ fun AlarmEditScreen(
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     allVoices.forEach { voice ->
                         DropdownMenuItem(
-                            text = { Text(if (voice.isCustom) "🎙 ${voice.displayName}" else "🌐 ${voice.displayName} (${voice.gender})") },
+                            text = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween // 텍스트와 아이콘 양끝 배치
+                                ) {
+                                    Text(if (voice.isCustom) "🎙 ${voice.displayName}" else "🌐 ${voice.displayName} (${voice.gender})")
+
+                                    // ✨ 커스텀 목소리인 경우에만 삭제 아이콘 표시
+                                    if (voice.isCustom) {
+                                        IconButton(
+                                            onClick = {
+                                                // customVoices 리스트에서 해당 보이스를 찾아 onDeleteVoice 호출
+                                                val target = customVoices.find { it.second == voice.id }
+                                                target?.let { onDeleteVoice(it) }
+                                            }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete, // 상단에 Icons.Default.Delete 임포트 필요
+                                                contentDescription = "삭제",
+                                                tint = Color.Red,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            },
                             onClick = {
                                 selectedVoiceId = voice.id
                                 expanded = false
