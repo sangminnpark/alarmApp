@@ -1,6 +1,6 @@
 package com.example.activity_mainxml.receiver
 
-import AlarmItem
+import com.example.activity_mainxml.model.AlarmItem
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent

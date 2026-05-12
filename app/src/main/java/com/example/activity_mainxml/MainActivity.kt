@@ -114,16 +114,26 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onCancelAlarm = { alarm ->
+                    // 💡 [수정] 단순 취소(스위치 끄기 등) 시에는 파일은 삭제하지 않고 알람 예약만 취소합니다.
+                    AlarmScheduler.cancel(this, alarm)
+                },
+                onDeleteAlarm = { alarm ->
+                    // 💡 [추가] 실제 삭제 시에는 알람 예약 취소와 함께 로컬 파일도 삭제합니다.
                     AlarmScheduler.cancel(this, alarm)
                     alarm.localFilePath?.let { path ->
                         val file = File(path)
                         if (file.exists()) {
-                            val isDeleted = file.delete()
-                            Log.d("ALARM_DEBUG", "알람 파일 삭제 여부: $isDeleted, 경로: $path")
+                            file.delete()
+                            Log.d("ALARM_DEBUG", "알람 파일 삭제 완료: $path")
                         }
                     }
                 },
-                onSaveToDisk = { list -> saveAlarms(this, list) }
+                onSaveToDisk = { list ->
+                    // 💡 [최적화] 디스크 저장 작업은 IO 스레드에서 비동기로 처리하여 메인 스레드 부하를 줄입니다.
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        saveAlarms(this@MainActivity, list)
+                    }
+                }
             )
         }
     }

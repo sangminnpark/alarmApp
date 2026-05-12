@@ -1,6 +1,6 @@
 package com.example.activity_mainxml.data
 
-import AlarmItem
+import com.example.activity_mainxml.model.AlarmItem
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken

@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.activity_mainxml.model.AlarmItem
 import com.example.activity_mainxml.model.TtsAudioConfig
 import com.example.activity_mainxml.model.TtsInput
 import com.example.activity_mainxml.model.TtsModel
@@ -53,6 +54,11 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val API_KEY = BuildConfig.GOOGLE_API_KEY
     private var wakeLock: android.os.PowerManager.WakeLock? = null
     private var currentTime by mutableStateOf("00:00")
+
+    // 💡 [추가] 볼륨 페이드 인 관리를 위한 변수
+    private var currentVolume = 0.1f
+    private val FADE_STEP = 0.05f
+    private val MAX_VOLUME = 1.0f
 
     // 캐싱을 위한 변수들
     private var isFirstPlay = true
@@ -244,18 +250,32 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun playCustomVoiceFile(file: File) {
         try {
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
+            if (mediaPlayer == null) {
+                mediaPlayer = MediaPlayer()
+            } else {
+                mediaPlayer?.reset()
+            }
+
+            mediaPlayer?.apply {
                 setDataSource(file.absolutePath)
                 setAudioStreamType(AudioManager.STREAM_ALARM)
+                // 💡 현재 페이드 인 볼륨 적용
+                setVolume(currentVolume, currentVolume)
                 isLooping = false
                 prepare()
                 start()
+                
+                // 💡 볼륨 서서히 키우기
+                if (currentVolume < MAX_VOLUME) {
+                    currentVolume += FADE_STEP
+                }
+
                 setOnCompletionListener {
                     if (isAlarmActive) handler.postDelayed({ playAlarmVoice() }, 1000)
                 }
             }
         } catch (e: Exception) {
+            Log.e("ALARM_DEBUG", "Custom voice play error: ${e.message}")
             fallbackToDefaultTts(message)
         }
     }
@@ -265,18 +285,32 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             val tempFile = File.createTempFile("tts_temp", "mp3", cacheDir)
             FileOutputStream(tempFile).use { it.write(audioBytes) }
 
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
+            if (mediaPlayer == null) {
+                mediaPlayer = MediaPlayer()
+            } else {
+                mediaPlayer?.reset()
+            }
+
+            mediaPlayer?.apply {
                 setDataSource(tempFile.absolutePath)
                 setAudioStreamType(AudioManager.STREAM_ALARM)
+                // 💡 현재 페이드 인 볼륨 적용
+                setVolume(currentVolume, currentVolume)
                 isLooping = false
                 prepare()
                 start()
+
+                // 💡 볼륨 서서히 키우기
+                if (currentVolume < MAX_VOLUME) {
+                    currentVolume += FADE_STEP
+                }
+
                 setOnCompletionListener {
                     if (isAlarmActive) handler.postDelayed({ playAlarmVoice() }, 1000)
                 }
             }
         } catch (e: Exception) {
+            Log.e("ALARM_DEBUG", "Audio bytes play error: ${e.message}")
             fallbackToDefaultTts(message)
         }
     }
@@ -307,6 +341,20 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
             wakeLock = null
+        }
+
+        // 💡 [추가] 반복 알람인 경우 다음 알람 예약
+        rescheduleIfNecessary()
+    }
+
+    private fun rescheduleIfNecessary() {
+        val alarmJson = intent.getStringExtra("alarm_json")
+        if (alarmJson != null) {
+            val alarm = com.google.gson.Gson().fromJson(alarmJson, AlarmItem::class.java)
+            if (alarm.repeatDays.isNotEmpty()) {
+                Log.d("ALARM_DEBUG", "반복 알람 재예약 시도: ${alarm.id}")
+                AlarmScheduler.schedule(this, alarm)
+            }
         }
     }
 

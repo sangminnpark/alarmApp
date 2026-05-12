@@ -30,12 +30,13 @@ class AlarmReceiver : BroadcastReceiver() {
         Log.d("AlarmReceiver", "알람 발생! ID: $alarmId, 메시지: $msg, 보이스ID: $voiceId")
 
         // 2. Intent 생성 및 데이터 전달
-        // 💡 변수명을 alertIntent로 정의해야 startActivity(alertIntent)가 작동합니다.
         val alertIntent = Intent(context, AlarmAlertActivity::class.java).apply {
-            putExtra("msg", msg)       // 위에서 정의한 msg 변수 사용
-            putExtra("voiceId", voiceId) // 위에서 꺼낸 voiceId 변수 사용
+            putExtra("msg", msg)
+            putExtra("voiceId", voiceId)
             putExtra("localFilePath", localFilePath)
             putExtra("alarmId", alarmId)
+            // 💡 JSON 데이터 전달 추가
+            putExtra("alarm_json", intent.getStringExtra("alarm_json"))
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP

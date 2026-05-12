@@ -1,6 +1,6 @@
 package com.example.activity_mainxml
 
-import AlarmItem
+import com.example.activity_mainxml.model.AlarmItem
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
@@ -76,8 +76,23 @@ object AlarmScheduler {
             set(Calendar.MINUTE, alarm.minute)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
-            if (before(Calendar.getInstance())) add(Calendar.DATE, 1)
+
+            // 💡 현재 시간보다 이전이면 일단 내일로 설정
+            if (before(Calendar.getInstance())) {
+                add(Calendar.DATE, 1)
+            }
+
+            // 💡 반복 요일이 설정되어 있다면, 해당 요일이 올 때까지 날짜를 더함
+            if (alarm.repeatDays.isNotEmpty()) {
+                while (!alarm.repeatDays.contains(get(Calendar.DAY_OF_WEEK))) {
+                    add(Calendar.DATE, 1)
+                }
+            }
         }
+
+        // 💡 [추가] 알람 정보를 JSON으로 전달하여 나중에 Reschedule 시 사용 가능하게 함
+        val alarmJson = com.google.gson.Gson().toJson(alarm)
+        intent.putExtra("alarm_json", alarmJson)
 
         val alarmClockInfo = AlarmManager.AlarmClockInfo(calendar.timeInMillis, pendingIntent)
         alarmManager.setAlarmClock(alarmClockInfo, pendingIntent)

@@ -1,6 +1,6 @@
 package com.example.activity_mainxml.ui.theme
 
-import AlarmItem
+import com.example.activity_mainxml.model.AlarmItem
 import android.content.Context
 import android.media.MediaPlayer
 import android.net.Uri
@@ -132,18 +132,22 @@ fun AlarmEditScreen(
         val previewPath: String? = null
     )
 
-    val googleVoices = listOf(
-        VoiceInfo("ko-KR-Standard-A", "Standard-A", "여성"),
-        VoiceInfo("ko-KR-Standard-B", "Standard-B", "여성"),
-        VoiceInfo("ko-KR-Standard-C", "Standard-C", "남성"),
-        VoiceInfo("ko-KR-Standard-D", "Standard-D", "남성"),
-        VoiceInfo("ko-KR-Wavenet-A", "Wavenet-A", "여성"),
-        VoiceInfo("ko-KR-Wavenet-B", "Wavenet-B", "여성"),
-        VoiceInfo("ko-KR-Wavenet-C", "Wavenet-C", "남성"),
-        VoiceInfo("ko-KR-Wavenet-D", "Wavenet-D", "남성")
-    )
-    val allVoices = googleVoices + customVoices.map {
-        VoiceInfo(id = it.second, displayName = it.first, isCustom = true, previewPath = it.third)
+    val googleVoices = remember {
+        listOf(
+            VoiceInfo("ko-KR-Standard-A", "Standard-A", "여성"),
+            VoiceInfo("ko-KR-Standard-B", "Standard-B", "여성"),
+            VoiceInfo("ko-KR-Standard-C", "Standard-C", "남성"),
+            VoiceInfo("ko-KR-Standard-D", "Standard-D", "남성"),
+            VoiceInfo("ko-KR-Wavenet-A", "Wavenet-A", "여성"),
+            VoiceInfo("ko-KR-Wavenet-B", "Wavenet-B", "여성"),
+            VoiceInfo("ko-KR-Wavenet-C", "Wavenet-C", "남성"),
+            VoiceInfo("ko-KR-Wavenet-D", "Wavenet-D", "남성")
+        )
+    }
+    val allVoices = remember(customVoices) {
+        googleVoices + customVoices.map {
+            VoiceInfo(id = it.second, displayName = it.first, isCustom = true, previewPath = it.third)
+        }
     }
     val currentVoice = allVoices.find { it.id == selectedVoiceId }
 

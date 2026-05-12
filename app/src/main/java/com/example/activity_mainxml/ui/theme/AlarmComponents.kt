@@ -1,6 +1,6 @@
 package com.example.activity_mainxml.ui.theme
 
-import AlarmItem
+import com.example.activity_mainxml.model.AlarmItem
 import VoiceRegistrationDialog
 import android.util.Log
 import android.widget.Toast
@@ -58,6 +58,7 @@ fun AlarmApp(
     customVoices: List<Triple<String, String, String>>,
     onGenerateVoice: (File, String, String, (String) -> Unit) -> Unit,
     onCancelAlarm: (AlarmItem) -> Unit,
+    onDeleteAlarm: (AlarmItem) -> Unit,
     onDeleteVoice: (Triple<String, String, String>) -> Unit,
     onSaveToDisk: (List<AlarmItem>) -> Unit
 ) {
@@ -83,7 +84,8 @@ fun AlarmApp(
                     onClick = {
                         val alarm = pendingDeleteAlarm!!
                         scope.launch {
-                            onCancelAlarm(alarm)
+                            // 💡 [수정] 알람 삭제 시 전용 onDeleteAlarm을 호출하여 파일까지 정리합니다.
+                            onDeleteAlarm(alarm)
                             alarmList = alarmList.filter { it.id != alarm.id }
                             Toast.makeText(context, "삭제되었습니다.", Toast.LENGTH_SHORT).show()
                             pendingDeleteAlarm = null
@@ -100,13 +102,15 @@ fun AlarmApp(
 
     LaunchedEffect(alarmList) { onSaveToDisk(alarmList) }
 
-    // ID 정제용 함수
-    fun extractPureVoiceId(rawId: String): String {
-        return if (rawId.contains("eleven_")) {
-            val idWithTimestamp = rawId.substringAfter("eleven_").substringBefore(".mp3")
-            idWithTimestamp.replace(Regex("\\d{10,}\$"), "")
-        } else {
-            rawId
+    // ID 정제용 함수 (컴포저블 리컴포지션 시 매번 생성되지 않도록 remember 사용)
+    val pureVoiceIdExtractor = remember {
+        { rawId: String ->
+            if (rawId.contains("eleven_")) {
+                val idWithTimestamp = rawId.substringAfter("eleven_").substringBefore(".mp3")
+                idWithTimestamp.replace(Regex("\\d{10,}$"), "")
+            } else {
+                rawId
+            }
         }
     }
 
@@ -116,7 +120,8 @@ fun AlarmApp(
             alarm = editingAlarm,
             customVoices = customVoices,
             onDeleteVoice = { voiceTriple ->
-                val pureId = extractPureVoiceId(voiceTriple.third)
+                // 💡 [수정] 파일 경로에서 ID를 추출할 필요 없이 voiceTriple.second(voiceId)를 직접 사용합니다.
+                val pureId = voiceTriple.second
                 scope.launch {
                     VoiceRepository.deleteElevenLabsVoice(pureId)
                     onDeleteVoice(voiceTriple)
@@ -136,33 +141,52 @@ fun AlarmApp(
                             }
                             if (audioFile != null) {
                                 localPath = audioFile.absolutePath
-                                finalVoiceId = extractPureVoiceId(audioFile.name)
+                                finalVoiceId = pureVoiceIdExtractor(audioFile.name)
                             }
                         }
                         val currentAlarm = if (isAddingNew) {
+                            // 새 알람 추가 시
                             AlarmItem(
                                 hour = h,
                                 minute = m,
                                 message = msg,
                                 repeatDays = days,
                                 voiceName = finalVoiceId,
-                                localFilePath = localPath
+                                localFilePath = localPath,
+                                isEnabled = true // 새 알람은 기본적으로 활성 상태
                             )
                         } else {
-                            onCancelAlarm(editingAlarm!!)
-                            editingAlarm!!.copy(
+                            // 기존 알람 수정 시
+                            val original = editingAlarm!!
+                            
+                            // 수정 전 상태가 활성이었다면 기존 예약 취소
+                            if (original.isEnabled) {
+                                onCancelAlarm(original)
+                            }
+                            
+                            original.copy(
                                 hour = h,
                                 minute = m,
                                 message = msg,
                                 repeatDays = days,
                                 voiceName = finalVoiceId,
                                 localFilePath = localPath,
-                                isEnabled = true
+                                isEnabled = original.isEnabled // 💡 핵심: 기존의 활성/비활성 상태를 그대로 유지
                             )
                         }
-                        alarmList =
-                            (if (isAddingNew) alarmList + currentAlarm else alarmList.map { if (it.id == currentAlarm.id) currentAlarm else it }).sortByTime()
-                        onSetAlarm(currentAlarm)
+                        
+                        // 리스트 업데이트
+                        alarmList = (if (isAddingNew) {
+                            alarmList + currentAlarm
+                        } else {
+                            alarmList.map { if (it.id == currentAlarm.id) currentAlarm else it }
+                        }).sortByTime()
+                        
+                        // 알람이 활성화된 상태일 때만 시스템 알람 예약
+                        if (currentAlarm.isEnabled) {
+                            onSetAlarm(currentAlarm)
+                        }
+
                         isAddingNew = false
                         editingAlarm = null
                     } catch (e: Exception) {
@@ -211,8 +235,11 @@ fun AlarmApp(
                         .padding(padding)
                         .fillMaxSize()
                 ) {
-                    // AlarmApp 내부의 LazyColumn 부분
-                    items(alarmList) { alarm ->
+                    // AlarmApp 내부의 LazyColumn 부분 - key 추가로 성능 최적화
+                    items(
+                        items = alarmList,
+                        key = { it.id }
+                    ) { alarm ->
                         AlarmRow(
                             alarm = alarm,
                             onToggle = { isChecked ->

@@ -1,3 +1,5 @@
+package com.example.activity_mainxml.model
+
 data class AlarmItem(
     val id: Int = (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
     val hour: Int,
