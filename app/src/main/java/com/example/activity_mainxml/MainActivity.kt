@@ -17,9 +17,10 @@ import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.example.activity_mainxml.alarm.AlarmScheduler
 import com.example.activity_mainxml.data.AlarmRepository.loadAlarms
 import com.example.activity_mainxml.data.AlarmRepository.saveAlarms
-import com.example.activity_mainxml.ui.theme.AlarmApp
+import com.example.activity_mainxml.ui.main.AlarmApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -165,6 +166,20 @@ class MainActivity : ComponentActivity() {
 
     // --- [권한 로직 유지] ---
     private fun checkSystemPermissions() {
+        // 1. 배터리 최적화 제외 요청 (알람 정확도 핵심)
+        val powerManager = getSystemService(POWER_SERVICE) as android.os.PowerManager
+        if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = android.net.Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                Log.e("ALARM_DEBUG", "Battery optimization request failed")
+            }
+        }
+
+        // 2. 정확한 알람 권한
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
             if (!alarmManager.canScheduleExactAlarms()) {

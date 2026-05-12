@@ -14,7 +14,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:allowBackup="false"
@@ -36,7 +36,7 @@
         </activity>
 
         <activity
-            android:name=".AlarmAlertActivity"
+            android:name=".ui.alert.AlarmAlertActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTop"
@@ -45,11 +45,11 @@
             android:turnScreenOn="true" />
 
         <receiver
-            android:name="com.example.activity_mainxml.receiver.AlarmReceiver"
+            android:name=".alarm.AlarmReceiver"
             android:exported="false" />
 
         <receiver
-            android:name="com.example.activity_mainxml.receiver.RebootReceiver"
+            android:name=".alarm.RebootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
