@@ -16,15 +16,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.example.activity_mainxml.alarm.AlarmScheduler
+import com.example.activity_mainxml.alarm.VoiceCleanupWorker
 import com.example.activity_mainxml.data.AlarmRepository.loadAlarms
 import com.example.activity_mainxml.data.AlarmRepository.saveAlarms
+import com.example.activity_mainxml.model.CustomVoice
 import com.example.activity_mainxml.ui.main.AlarmApp
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.TimeUnit
+import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
 
@@ -34,41 +44,36 @@ class MainActivity : ComponentActivity() {
         // 권한 체크
         checkSystemPermissions()
 
+        // 💡 사용자 ID 부여 및 워커 예약
+        val userId = getOrCreateUserId()
+        scheduleCleanupWorker()
+
         val initialAlarms = loadAlarms(this)
 
         setContent {
-            // 💡 [추가] 앱 시작 시 저장된 커스텀 보이스 리스트를 불러옵니다.
-            // MainActivity.kt 내 setContent 블록 시작 부분
+            // 💡 [변경] CustomVoice 객체 리스트를 사용합니다.
             var customVoices by remember {
-                mutableStateOf<List<Triple<String, String, String>>>(loadCustomVoicesFromPrefs())
+                mutableStateOf<List<CustomVoice>>(loadCustomVoicesFromPrefs())
             }
 
             AlarmApp(
                 initialAlarms = initialAlarms,
-                customVoices = customVoices, // 💡 AlarmApp으로 리스트 전달
+                customVoices = customVoices.map { Triple(it.name, it.voiceId, it.previewPath) }, 
                 onSetAlarm = { alarm -> AlarmScheduler.schedule(this, alarm) },
 
-                onDeleteVoice = { voiceToDelete ->
-                    // voiceToDelete: Triple(이름, voiceId, 미리보기경로)
-                    val previewFile = File(voiceToDelete.third)
+                onDeleteVoice = { voiceTriple ->
+                    val previewFile = File(voiceTriple.third)
                     if (previewFile.exists()) previewFile.delete()
 
-                    // 리스트에서 삭제 (voiceId가 일치하지 않는 것만 남김)
-                    val updatedList = customVoices.filter { it.second != voiceToDelete.second }
+                    val updatedList = customVoices.filter { it.voiceId != voiceTriple.second }
                     customVoices = updatedList
                     saveCustomVoicesToPrefs(updatedList)
 
-                    Toast.makeText(
-                        this@MainActivity,
-                        "'${voiceToDelete.first}' 삭제 완료",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    Toast.makeText(this@MainActivity, "'${voiceTriple.first}' 삭제 완료", Toast.LENGTH_SHORT).show()
                 },
-                // MainActivity.kt 내부 onGenerateVoice 수정
-                onGenerateVoice = { file, _, customName, onComplete -> // promptText는 이제 필요 없으므로 _ 처리
+                onGenerateVoice = { file, _, customName, onComplete ->
                     lifecycleScope.launch {
                         try {
-                            // 💡 [변경] 일레븐랩스 서버에 등록하고 ID와 미리보기 파일을 가져옵니다.
                             val result = withContext(Dispatchers.IO) {
                                 AlarmScheduler.requestElevenLabsVoice(
                                     context = this@MainActivity,
@@ -78,90 +83,118 @@ class MainActivity : ComponentActivity() {
                             }
 
                             if (result != null) {
-                                val (voiceId, previewFile) = result // Pair(String, File) 분해
-                                val previewPath = previewFile.absolutePath
-                                val newName =
-                                    if (customName.isNotBlank()) customName else "내 목소리 ${customVoices.size + 1}"
+                                val (voiceId, previewFile) = result
+                                val newVoice = CustomVoice(
+                                    name = if (customName.isNotBlank()) customName else "내 목소리 ${customVoices.size + 1}",
+                                    voiceId = voiceId,
+                                    previewPath = previewFile.absolutePath,
+                                    userId = userId
+                                )
 
-                                // 💡 [핵심] 두 번째 인자에 파일 경로 대신 voiceId를 넣습니다.
-                                val updatedList =
-                                    customVoices + Triple(newName, voiceId, previewPath)
-
+                                val updatedList = customVoices + newVoice
                                 saveCustomVoicesToPrefs(updatedList)
                                 customVoices = updatedList
 
-                                // UI에 완료 알림 (onComplete에는 식별자로 voiceId를 넘겨줍니다)
                                 onComplete(voiceId)
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    "'$newName' 생성 완료!",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                Toast.makeText(this@MainActivity, "'${newVoice.name}' 생성 완료!", Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    "보이스 생성 실패 (ElevenLabs 에러)",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                Toast.makeText(this@MainActivity, "보이스 생성 실패", Toast.LENGTH_SHORT).show()
                             }
                         } catch (e: Exception) {
-                            Log.e("ALARM_DEBUG", "예외 발생: ${e.message}")
-                            Toast.makeText(
-                                this@MainActivity,
-                                "연결 실패: ${e.message}",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(this@MainActivity, "연결 실패: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
                     }
                 },
-                onCancelAlarm = { alarm ->
-                    // 💡 [수정] 단순 취소(스위치 끄기 등) 시에는 파일은 삭제하지 않고 알람 예약만 취소합니다.
-                    AlarmScheduler.cancel(this, alarm)
-                },
+                onCancelAlarm = { alarm -> AlarmScheduler.cancel(this, alarm) },
                 onDeleteAlarm = { alarm ->
-                    // 💡 [추가] 실제 삭제 시에는 알람 예약 취소와 함께 로컬 파일도 삭제합니다.
                     AlarmScheduler.cancel(this, alarm)
                     alarm.localFilePath?.let { path ->
                         val file = File(path)
-                        if (file.exists()) {
-                            file.delete()
-                            Log.d("ALARM_DEBUG", "알람 파일 삭제 완료: $path")
-                        }
+                        if (file.exists()) file.delete()
                     }
                 },
                 onSaveToDisk = { list ->
-                    // 💡 [최적화] 디스크 저장 작업은 IO 스레드에서 비동기로 처리하여 메인 스레드 부하를 줄입니다.
+                    // 💡 알람 저장 시 사용된 보이스의 lastUsedAt 갱신
+                    val activeVoiceIds = list.filter { it.isEnabled }.map { it.voiceName }
+                    updateVoiceUsage(activeVoiceIds)
+                    
                     lifecycleScope.launch(Dispatchers.IO) {
-                        saveAlarms(this@MainActivity, list)
+                        saveAlarms(this@MainActivity, list.map { it.copy(userId = userId) })
                     }
                 }
             )
         }
     }
 
-    // --- [데이터 저장/불러오기 유틸리티] ---
-
-    /**
-     * SharedPreferences에서 "이름|경로" 형태로 저장된 보이스 목록을 불러옵니다.
-     */
-    // Triple 타입으로 변경 (이름, 메인경로, 미리보기경로)
-    private fun loadCustomVoicesFromPrefs(): List<Triple<String, String, String>> {
-        val prefs = getSharedPreferences("custom_voices_prefs", MODE_PRIVATE)
-        val savedData = prefs.getString("voice_list", "") ?: ""
-        if (savedData.isEmpty()) return emptyList()
-
-        return savedData.split(",").mapNotNull {
-            val parts = it.split("|")
-            // 💡 저장 형식이 이름|메인|미리보기 3개인지 확인
-            if (parts.size == 3) Triple(parts[0], parts[1], parts[2]) else null
+    private fun getOrCreateUserId(): String {
+        val prefs = getSharedPreferences("user_prefs", MODE_PRIVATE)
+        var id = prefs.getString("user_id", null)
+        if (id == null) {
+            id = "user_${System.currentTimeMillis()}_${Random.nextInt(1000)}"
+            prefs.edit { putString("user_id", id) }
         }
+        return id
     }
 
-    private fun saveCustomVoicesToPrefs(voices: List<Triple<String, String, String>>) {
+    private fun scheduleCleanupWorker() {
+        val cleanupRequest = PeriodicWorkRequestBuilder<VoiceCleanupWorker>(1, TimeUnit.DAYS).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "VoiceCleanup",
+            ExistingPeriodicWorkPolicy.KEEP,
+            cleanupRequest
+        )
+    }
+
+    private fun updateVoiceUsage(activeVoiceIds: List<String>) {
+        val voices = loadCustomVoicesFromPrefs().toMutableList()
+        var changed = false
+        voices.forEach { voice ->
+            if (activeVoiceIds.contains(voice.voiceId)) {
+                voice.lastUsedAt = System.currentTimeMillis()
+                changed = true
+            }
+        }
+        if (changed) saveCustomVoicesToPrefs(voices)
+    }
+
+    private fun loadCustomVoicesFromPrefs(): List<CustomVoice> {
         val prefs = getSharedPreferences("custom_voices_prefs", MODE_PRIVATE)
-        // 💡 세 가지 정보를 | 구분자로 합쳐서 저장
-        val dataString = voices.joinToString(",") { "${it.first}|${it.second}|${it.third}" }
-        prefs.edit().putString("voice_list", dataString).apply()
+        val json = prefs.getString("voice_list_v2", null)
+
+        // 💡 1. 신규 형식이 이미 있다면 그대로 반환
+        if (json != null) {
+            return Gson().fromJson(json, object : TypeToken<List<CustomVoice>>() {}.type)
+        }
+
+        // 💡 2. 신규 형식이 없고 구형 데이터가 있다면 마이그레이션 진행
+        val oldData = prefs.getString("voice_list", "") ?: ""
+        if (oldData.isNotEmpty()) {
+            val userId = getOrCreateUserId()
+            val migratedList = oldData.split(",").mapNotNull {
+                val parts = it.split("|")
+                if (parts.size == 3) {
+                    CustomVoice(
+                        name = parts[0],
+                        voiceId = parts[1],
+                        previewPath = parts[2],
+                        userId = userId, // 현재 사용자에게 귀속
+                        lastUsedAt = System.currentTimeMillis() // 지금부터 3일 카운트 시작
+                    )
+                } else null
+            }
+            
+            // 마이그레이션된 데이터를 새 키에 저장하고 구형 데이터 삭제
+            saveCustomVoicesToPrefs(migratedList)
+            prefs.edit { remove("voice_list") }
+            return migratedList
+        }
+
+        return emptyList()
+    }
+
+    private fun saveCustomVoicesToPrefs(voices: List<CustomVoice>) {
+        val prefs = getSharedPreferences("custom_voices_prefs", MODE_PRIVATE)
+        prefs.edit().putString("voice_list_v2", Gson().toJson(voices)).apply()
     }
 
     // --- [권한 로직 유지] ---

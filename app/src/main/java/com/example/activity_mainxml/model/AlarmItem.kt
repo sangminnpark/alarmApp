@@ -9,5 +9,6 @@ data class AlarmItem(
     val repeatDays: Set<Int> = emptySet(),
     val voiceId: String = "",
     val voiceName: String = "",
-    val localFilePath: String? = null
+    val localFilePath: String? = null,
+    val userId: String = "guest" // 사용자 식별을 위한 ID 추가
 )
