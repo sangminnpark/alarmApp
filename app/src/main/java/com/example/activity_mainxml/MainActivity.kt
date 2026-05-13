@@ -18,11 +18,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import com.example.activity_mainxml.alarm.AlarmScheduler
-import com.example.activity_mainxml.alarm.VoiceCleanupWorker
 import com.example.activity_mainxml.data.AlarmRepository.loadAlarms
 import com.example.activity_mainxml.data.AlarmRepository.saveAlarms
 import com.example.activity_mainxml.model.CustomVoice
@@ -33,7 +29,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
@@ -44,9 +39,8 @@ class MainActivity : ComponentActivity() {
         // 권한 체크
         checkSystemPermissions()
 
-        // 💡 사용자 ID 부여 및 워커 예약
+        // 💡 사용자 ID 부여 (식별용도로 유지)
         val userId = getOrCreateUserId()
-        scheduleCleanupWorker()
 
         val initialAlarms = loadAlarms(this)
 
@@ -114,10 +108,6 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onSaveToDisk = { list ->
-                    // 💡 알람 저장 시 사용된 보이스의 lastUsedAt 갱신
-                    val activeVoiceIds = list.filter { it.isEnabled }.map { it.voiceName }
-                    updateVoiceUsage(activeVoiceIds)
-                    
                     lifecycleScope.launch(Dispatchers.IO) {
                         saveAlarms(this@MainActivity, list.map { it.copy(userId = userId) })
                     }
@@ -134,27 +124,6 @@ class MainActivity : ComponentActivity() {
             prefs.edit { putString("user_id", id) }
         }
         return id
-    }
-
-    private fun scheduleCleanupWorker() {
-        val cleanupRequest = PeriodicWorkRequestBuilder<VoiceCleanupWorker>(1, TimeUnit.DAYS).build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "VoiceCleanup",
-            ExistingPeriodicWorkPolicy.KEEP,
-            cleanupRequest
-        )
-    }
-
-    private fun updateVoiceUsage(activeVoiceIds: List<String>) {
-        val voices = loadCustomVoicesFromPrefs().toMutableList()
-        var changed = false
-        voices.forEach { voice ->
-            if (activeVoiceIds.contains(voice.voiceId)) {
-                voice.lastUsedAt = System.currentTimeMillis()
-                changed = true
-            }
-        }
-        if (changed) saveCustomVoicesToPrefs(voices)
     }
 
     private fun loadCustomVoicesFromPrefs(): List<CustomVoice> {
