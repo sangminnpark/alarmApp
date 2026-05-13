@@ -93,7 +93,7 @@ fun AlarmApp(
                     onDeleteVoice(voiceTriple)
                 }
             },
-            onSave = { h, m, msg, days, vId, _, _ ->
+            onSave = { h, m, msg, days, vId, _, _, sound, vib ->
                 scope.launch {
                     try {
                         var localPath: String? = null
@@ -111,11 +111,31 @@ fun AlarmApp(
                             }
                         }
                         val currentAlarm = if (isAddingNew) {
-                            AlarmItem(hour = h, minute = m, message = msg, repeatDays = days, voiceName = finalVoiceId, localFilePath = localPath, isEnabled = true)
+                            AlarmItem(
+                                hour = h,
+                                minute = m,
+                                message = msg,
+                                repeatDays = days,
+                                voiceName = finalVoiceId,
+                                localFilePath = localPath,
+                                isEnabled = true,
+                                isSoundEnabled = sound,
+                                isVibrationEnabled = vib
+                            )
                         } else {
                             val original = editingAlarm!!
                             if (original.isEnabled) onCancelAlarm(original)
-                            original.copy(hour = h, minute = m, message = msg, repeatDays = days, voiceName = finalVoiceId, localFilePath = localPath, isEnabled = original.isEnabled)
+                            original.copy(
+                                hour = h,
+                                minute = m,
+                                message = msg,
+                                repeatDays = days,
+                                voiceName = finalVoiceId,
+                                localFilePath = localPath,
+                                isEnabled = original.isEnabled,
+                                isSoundEnabled = sound,
+                                isVibrationEnabled = vib
+                            )
                         }
                         alarmList = (if (isAddingNew) alarmList + currentAlarm else alarmList.map { if (it.id == currentAlarm.id) currentAlarm else it }).sortByTime()
                         if (currentAlarm.isEnabled) onSetAlarm(currentAlarm)

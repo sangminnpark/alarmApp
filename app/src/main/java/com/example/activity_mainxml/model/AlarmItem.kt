@@ -10,5 +10,7 @@ data class AlarmItem(
     val voiceId: String = "",
     val voiceName: String = "",
     val localFilePath: String? = null,
-    val userId: String = "guest" // 사용자 식별을 위한 ID 추가
+    val userId: String = "guest",
+    val isSoundEnabled: Boolean = true,    // 사운드 활성화 여부
+    val isVibrationEnabled: Boolean = true // 진동 활성화 여부
 )

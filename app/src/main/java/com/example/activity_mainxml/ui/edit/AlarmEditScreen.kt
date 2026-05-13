@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -86,7 +87,7 @@ fun AlarmEditScreen(
     alarm: AlarmItem?,
     customVoices: List<Triple<String, String, String>>,
     onDeleteVoice: (Triple<String, String, String>) -> Unit,
-    onSave: (Int, Int, String, Set<Int>, String, File?, String?) -> Unit,
+    onSave: (Int, Int, String, Set<Int>, String, File?, String?, Boolean, Boolean) -> Unit,
     onCancel: () -> Unit
 ) {
     BackHandler {
@@ -119,6 +120,10 @@ fun AlarmEditScreen(
     }
     var message by remember { mutableStateOf(alarm?.message ?: "") }
     var selectedDays by remember { mutableStateOf(alarm?.repeatDays ?: (1..7).toSet()) }
+
+    // 사운드 및 진동 설정 상태
+    var isSoundEnabled by remember { mutableStateOf(alarm?.isSoundEnabled ?: true) }
+    var isVibrationEnabled by remember { mutableStateOf(alarm?.isVibrationEnabled ?: true) }
 
     val API_KEY = BuildConfig.GOOGLE_API_KEY
     val dayLabels = listOf("월", "화", "수", "목", "금", "토", "일")
@@ -300,7 +305,8 @@ fun AlarmEditScreen(
                     onValueChange = { hour = it },
                     range = 1..12,
                     label = "시",
-                    isMinute = false
+                    isMinute = false,
+                    isHour = true // 💡 시간도 2자리 포맷 적용
                 )
                 Text(
                     ":",
@@ -346,6 +352,26 @@ fun AlarmEditScreen(
                 label = { Text("보이스 메시지") },
                 modifier = Modifier.fillMaxWidth()
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 알림 모드 설정 (사운드/진동)
+            Text("알림 방식", style = MaterialTheme.typography.bodyMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = isSoundEnabled, onCheckedChange = { isSoundEnabled = it })
+                    Text("사운드")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = isVibrationEnabled, onCheckedChange = { isVibrationEnabled = it })
+                    Text("진동")
+                }
+            }
+
             Spacer(modifier = Modifier.weight(1f))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -375,7 +401,8 @@ fun AlarmEditScreen(
                         isSaving = true
                         val finalHour = if (hour == 12) amPmOffset!! else amPmOffset!! + hour
                         onSave(
-                            finalHour, minute, message, selectedDays, selectedVoiceId!!, null, null
+                            finalHour, minute, message, selectedDays, selectedVoiceId!!, null, null,
+                            isSoundEnabled, isVibrationEnabled
                         )
                     }, modifier = Modifier.weight(1f), enabled = !isSaving
                 ) { Text(if (isSaving) "저장 중..." else "저장") }
@@ -390,22 +417,23 @@ fun TimeInputUnit(
     onValueChange: (Int) -> Unit,
     range: IntRange,
     label: String,
-    isMinute: Boolean = false
+    isMinute: Boolean = false,
+    isHour: Boolean = false // 시간 표시 여부 추가
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
 
     var isTyping by remember { mutableStateOf(false) }
 
-    // 화면 표시용 텍스트 상태
+    // 화면 표시용 텍스트 상태 (시간과 분 모두 2자리 포맷 적용)
     var textFieldValue by remember {
-        mutableStateOf(if (isMinute) String.format("%02d", value) else value.toString())
+        mutableStateOf(if (isMinute || isHour) String.format("%02d", value) else value.toString())
     }
 
     // 외부 값 변경 감지 (화살표 버튼 등)
     LaunchedEffect(value) {
         if (!isTyping) {
-            textFieldValue = if (isMinute) String.format("%02d", value) else value.toString()
+            textFieldValue = if (isMinute || isHour) String.format("%02d", value) else value.toString()
         }
     }
 
@@ -426,31 +454,28 @@ fun TimeInputUnit(
                         return@BasicTextField
                     }
 
+                    // 💡 시간(hour) 입력 시 "0"으로 시작하는 것을 허용하여 "08" 입력을 가능하게 함
+                    if (isHour && input == "0") {
+                        isTyping = true
+                        textFieldValue = "0"
+                        return@BasicTextField
+                    }
+
                     val intVal = input.toInt()
 
-                    // 1. 유효 범위 내의 입력 (0~59)
+                    // 1. 유효 범위 내의 입력 (1~12 또는 0~59)
                     if (intVal in range) {
                         isTyping = true
                         textFieldValue = input
                         onValueChange(intVal)
                     }
-                    // 2. 범위 초과 시 (60~99)
+                    // 2. 범위 초과 시 (12시 초과 또는 59분 초과)
                     else {
-                        // 토스트 메시지 출력
-                        Toast.makeText(
-                            context, "${range.last}${label} 이하로 설정해주세요.", Toast.LENGTH_SHORT
-                        ).show()
-
-                        // 💡 잘못된 입력 시 00(또는 범위 시작값)으로 되돌리기
-                        isTyping = false
-                        val resetValue = range.first
-                        onValueChange(resetValue)
-                        textFieldValue = if (isMinute) String.format(
-                            "%02d", resetValue
-                        ) else resetValue.toString()
-
-                        // 입력이 틀렸으므로 포커스 해제 (선택 사항)
-                        focusManager.clearFocus()
+                        if (intVal > range.last) {
+                            Toast.makeText(context, "${range.last}${label} 이하로 설정해주세요.", Toast.LENGTH_SHORT).show()
+                        }
+                        
+                        // 잘못된 입력이나 범위를 벗어난 경우 포커스 해제 및 초기화는 onFocusChanged에서 처리되도록 유도
                     }
                 }
             }, modifier = Modifier
@@ -458,8 +483,8 @@ fun TimeInputUnit(
                 .onFocusChanged { focusState ->
                     if (!focusState.isFocused) {
                         isTyping = false
-                        textFieldValue =
-                            if (isMinute) String.format("%02d", value) else value.toString()
+                        // 💡 포커스를 잃으면 무조건 08:05와 같은 2자리 포맷으로 강제 변환
+                        textFieldValue = String.format("%02d", value)
                     }
                 }, textStyle = TextStyle(
                 fontSize = 32.sp,
@@ -470,7 +495,7 @@ fun TimeInputUnit(
                 keyboardType = KeyboardType.Number, imeAction = ImeAction.Done
             ), keyboardActions = KeyboardActions(onDone = {
                 isTyping = false
-                textFieldValue = if (isMinute) String.format("%02d", value) else value.toString()
+                textFieldValue = String.format("%02d", value)
                 focusManager.clearFocus()
             }), singleLine = true
         )

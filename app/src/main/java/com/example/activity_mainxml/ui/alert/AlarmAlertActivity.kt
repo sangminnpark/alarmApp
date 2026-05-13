@@ -1,10 +1,14 @@
 package com.example.activity_mainxml.ui.alert
 
+import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Base64
@@ -45,17 +49,23 @@ import java.util.Locale
 class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var mediaPlayer: MediaPlayer? = null
     private var tts: TextToSpeech? = null
+    private var vibrator: Vibrator? = null
     private var message: String = ""
     private var voiceId: String? = null
 
     private var alarmId: Int = -1
     private var isAlarmActive = true
+    private var isSoundEnabled = true
+    private var isVibrationEnabled = true
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.Main + Job())
 
     private val API_KEY = BuildConfig.GOOGLE_API_KEY
     private var wakeLock: android.os.PowerManager.WakeLock? = null
-    private var currentTime by mutableStateOf("00:00")
+    private var currentTime by mutableStateOf(
+        String.format("%02d:%02d", Calendar.getInstance().get(Calendar.HOUR_OF_DAY), Calendar.getInstance().get(Calendar.MINUTE))
+    )
+    private var setAlarmTimeText by mutableStateOf("")
 
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private var audioFocusRequest: android.media.AudioFocusRequest? = null
@@ -69,6 +79,25 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var lastAudio: ByteArray? = null
     private var lastElevenFile: File? = null
 
+    private val timeCheckRunnable = object : Runnable {
+        override fun run() {
+            val calendar = Calendar.getInstance()
+            val currentMin = calendar.get(Calendar.MINUTE)
+            val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
+            
+            // 💡 실시간 현재 시간 UI 업데이트 (메인 시간)
+            currentTime = String.format("%02d:%02d", currentHour, currentMin)
+
+            // 분이 바뀌었을 때만 음성 갱신
+            if (isAlarmActive && currentMin != lastMinute && lastMinute != -1) {
+                Log.d("ALARM_DEBUG", "분 변경 감지 ($lastMinute -> $currentMin), 음성 갱신")
+                stopAlarmVoiceOnly()
+                playAlarmVoice()
+            }
+            handler.postDelayed(this, 1000)
+        }
+    }
+
     private fun acquireWakeLock() {
         val powerManager = getSystemService(POWER_SERVICE) as android.os.PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -80,12 +109,27 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // 알람 정보 파싱
+        val alarmJson = intent.getStringExtra("alarm_json")
+        if (alarmJson != null) {
+            val alarm = com.google.gson.Gson().fromJson(alarmJson, AlarmItem::class.java)
+            isSoundEnabled = alarm.isSoundEnabled
+            isVibrationEnabled = alarm.isVibrationEnabled
+
+            val amPm = if (alarm.hour < 12) "오전" else "오후"
+            val hour = if (alarm.hour % 12 == 0) 12 else alarm.hour % 12
+            setAlarmTimeText = String.format("%s %02d:%02d", amPm, hour, alarm.minute)
+        }
+
         message = intent.getStringExtra("msg")?.trim() ?: ""
         voiceId = intent.getStringExtra("voiceId")
         alarmId = intent.getIntExtra("alarmId", -1)
 
         setupLockScreenVisible()
         acquireWakeLock()
+
+        if (isVibrationEnabled) startVibration()
 
         setContent {
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.errorContainer) {
@@ -95,6 +139,16 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(Icons.Default.Notifications, null, modifier = Modifier.size(100.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    if (setAlarmTimeText.isNotBlank()) {
+                        Text(
+                            text = "설정된 알람: $setAlarmTimeText",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(text = currentTime, style = MaterialTheme.typography.displayLarge, fontWeight = FontWeight.Black)
                     if (message.isNotBlank()) {
@@ -115,8 +169,30 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale.KOREAN
-            playAlarmVoice()
-        } else playAlarmVoice()
+            if (isSoundEnabled) playAlarmVoice()
+        } else {
+            if (isSoundEnabled) playAlarmVoice()
+        }
+        // 시간 변경 감지 시작
+        handler.post(timeCheckRunnable)
+    }
+
+    private fun startVibration() {
+        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+
+        val pattern = longArrayOf(0, 1000, 1000) // 1초 진동, 1초 대기
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator?.vibrate(pattern, 0)
+        }
     }
 
     private fun setupLockScreenVisible() {
@@ -194,8 +270,16 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     lastElevenFile = audioFile
                     lastMinute = currentMin
                     playCustomVoiceFile(audioFile)
-                } else fallbackToDefaultTts(text)
-            } catch (e: Exception) { fallbackToDefaultTts(text) }
+                } else {
+                    // 💡 [방어 로직] 생성 실패 시 즉시 기본 TTS로 폴백
+                    Log.e("ALARM_DEBUG", "ElevenLabs generation failed, falling back to default TTS")
+                    fallbackToDefaultTts(text)
+                }
+            } catch (e: Exception) {
+                // 💡 [방어 로직] 예외 발생 시 즉시 기본 TTS로 폴백
+                Log.e("ALARM_DEBUG", "ElevenLabs Exception: ${e.message}, falling back to default TTS")
+                fallbackToDefaultTts(text)
+            }
         }
     }
 
@@ -213,8 +297,16 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     lastAudio = audioBytes
                     lastMinute = currentMin
                     playAudio(audioBytes)
-                } else fallbackToDefaultTts(text)
-            } catch (e: Exception) { fallbackToDefaultTts(text) }
+                } else {
+                    // 💡 [방어 로직] 구글 API 실패 시 즉시 기본 TTS로 폴백
+                    Log.e("ALARM_DEBUG", "Google TTS failure (code: ${response.code()}), falling back to default TTS")
+                    fallbackToDefaultTts(text)
+                }
+            } catch (e: Exception) {
+                // 💡 [방어 로직] 예외 발생 시 즉시 기본 TTS로 폴백
+                Log.e("ALARM_DEBUG", "Google TTS Exception: ${e.message}, falling back to default TTS")
+                fallbackToDefaultTts(text)
+            }
         }
     }
 
@@ -269,6 +361,8 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         mediaPlayer?.release()
         mediaPlayer = null
         tts?.stop()
+        vibrator?.cancel()
+        vibrator = null
         scope.cancel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
             audioManager.abandonAudioFocusRequest(audioFocusRequest!!)
@@ -306,11 +400,22 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         lastMinute = -1
         lastAudio = null
         lastElevenFile = null
+
+        val alarmJson = intent.getStringExtra("alarm_json")
+        if (alarmJson != null) {
+            val alarm = com.google.gson.Gson().fromJson(alarmJson, AlarmItem::class.java)
+            isSoundEnabled = alarm.isSoundEnabled
+            isVibrationEnabled = alarm.isVibrationEnabled
+        }
+
         stopAlarmVoiceOnly()
+        vibrator?.cancel()
+        if (isVibrationEnabled) startVibration()
+
         message = intent.getStringExtra("msg")?.trim() ?: ""
         voiceId = intent.getStringExtra("voiceId")
         alarmId = intent.getIntExtra("alarmId", -1)
-        playAlarmVoice()
+        if (isSoundEnabled) playAlarmVoice()
     }
 
     private fun stopAlarmVoiceOnly() {
