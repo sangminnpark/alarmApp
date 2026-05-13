@@ -216,8 +216,8 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             audioFocusRequest = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(
                     android.media.AudioAttributes.Builder()
-                        .setUsage(android.media.AudioAttributes.USAGE_ALARM)
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build()
                 )
                 .setOnAudioFocusChangeListener { }
@@ -225,7 +225,7 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             audioManager.requestAudioFocus(audioFocusRequest!!) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         } else {
             @Suppress("DEPRECATION")
-            audioManager.requestAudioFocus(null, AudioManager.STREAM_ALARM, AudioManager.AUDIOFOCUS_GAIN) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         }
     }
 
@@ -315,7 +315,12 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             if (mediaPlayer == null) mediaPlayer = MediaPlayer() else mediaPlayer?.reset()
             mediaPlayer?.apply {
                 setDataSource(file.absolutePath)
-                setAudioStreamType(AudioManager.STREAM_ALARM)
+                // 💡 미디어 스트림을 사용하여 이어폰/블루투스 연결 시 해당 기기로 출력되도록 설정
+                val attr = android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+                setAudioAttributes(attr)
                 setVolume(currentVolume, currentVolume)
                 isLooping = false
                 prepare()
@@ -333,7 +338,12 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             if (mediaPlayer == null) mediaPlayer = MediaPlayer() else mediaPlayer?.reset()
             mediaPlayer?.apply {
                 setDataSource(tempFile.absolutePath)
-                setAudioStreamType(AudioManager.STREAM_ALARM)
+                // 💡 미디어 스트림을 사용하여 이어폰/블루투스 연결 시 해당 기기로 출력되도록 설정
+                val attr = android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+                setAudioAttributes(attr)
                 setVolume(currentVolume, currentVolume)
                 isLooping = false
                 prepare()
@@ -345,7 +355,10 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun fallbackToDefaultTts(text: String) {
-        val params = Bundle().apply { putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_ALARM) }
+        val params = Bundle().apply { 
+            // 💡 미디어 스트림 사용
+            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC) 
+        }
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
             override fun onDone(utteranceId: String?) { if (isAlarmActive) handler.postDelayed({ playAlarmVoice() }, 2000) }
