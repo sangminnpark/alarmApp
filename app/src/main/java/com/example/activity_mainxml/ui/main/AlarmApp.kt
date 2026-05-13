@@ -2,10 +2,13 @@ package com.example.activity_mainxml.ui.main
 
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Mic
@@ -87,138 +90,143 @@ fun AlarmApp(
         }
     }
 
-    if (isAddingNew || editingAlarm != null) {
-        AlarmEditScreen(
-            alarm = editingAlarm,
-            customVoices = customVoices,
-            onDeleteVoice = { voiceTriple ->
-                scope.launch {
-                    VoiceRepository.deleteElevenLabsVoice(voiceTriple.second)
-                    onDeleteVoice(voiceTriple)
-                }
-            },
-            onSave = { h, m, msg, days, vId, _, _, sound, vib ->
-                scope.launch {
-                    try {
-                        var localPath: String? = null
-                        var finalVoiceId = vId
-                        if (!vId.startsWith("ko-KR-")) {
-                            val amPm = if (h < 12) "오전" else "오후"
-                            val displayHour = if (h % 12 == 0) 12 else h % 12
-                            val fullText = "현재 시간은 ${amPm} ${displayHour}시 ${m}분입니다. $msg"
-                            val audioFile = withContext(Dispatchers.IO) {
-                                VoiceRepository.makeElevenLabsVoiceFile(vId, fullText, context)
-                            }
-                            if (audioFile != null) {
-                                localPath = audioFile.absolutePath
-                                finalVoiceId = pureVoiceIdExtractor(audioFile.name)
-                            }
-                        }
-                        val currentAlarm = if (isAddingNew) {
-                            AlarmItem(
-                                hour = h,
-                                minute = m,
-                                message = msg,
-                                repeatDays = days,
-                                voiceName = finalVoiceId,
-                                localFilePath = localPath,
-                                isEnabled = true,
-                                isSoundEnabled = sound,
-                                isVibrationEnabled = vib
-                            )
-                        } else {
-                            val original = editingAlarm!!
-                            if (original.isEnabled) onCancelAlarm(original)
-                            original.copy(
-                                hour = h,
-                                minute = m,
-                                message = msg,
-                                repeatDays = days,
-                                voiceName = finalVoiceId,
-                                localFilePath = localPath,
-                                isEnabled = original.isEnabled,
-                                isSoundEnabled = sound,
-                                isVibrationEnabled = vib
-                            )
-                        }
-                        alarmList = (if (isAddingNew) alarmList + currentAlarm else alarmList.map { if (it.id == currentAlarm.id) currentAlarm else it }).sortByTime()
-                        if (currentAlarm.isEnabled) onSetAlarm(currentAlarm)
-                        isAddingNew = false
-                        editingAlarm = null
-                    } catch (e: Exception) { Log.e("ALARM_SAVE", "${e.message}") }
-                }
-            },
-            onCancel = { isAddingNew = false; editingAlarm = null }
-        )
-    } else {
-        Scaffold(
-            topBar = { 
-                CenterAlignedTopAppBar(
-                    title = { 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_voice_wake_logo),
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Voice Wake",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = Color.Transparent
-                    )
-                ) 
-            },
-            floatingActionButton = {
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    FloatingActionButton(onClick = { showVoiceRegistration = true }, containerColor = MaterialTheme.colorScheme.secondaryContainer) {
-                        Icon(Icons.Default.Mic, contentDescription = "목소리 등록")
+    // 💡 화면 전환 애니메이션 최적화 (구형 기기 대응 및 중복 제거)
+    AnimatedContent(
+        targetState = (isAddingNew || editingAlarm != null),
+        transitionSpec = {
+            // 복잡한 슬라이드 대신 가벼운 페이드 + 가로/세로 확대 축소 적용
+            (fadeIn(animationSpec = tween(250)) + scaleIn(initialScale = 0.95f))
+                .togetherWith(fadeOut(animationSpec = tween(200)))
+        },
+        label = "ScreenTransition"
+    ) { isEditing ->
+        if (isEditing) {
+            AlarmEditScreen(
+                alarm = editingAlarm,
+                customVoices = customVoices,
+                onDeleteVoice = { voiceTriple ->
+                    scope.launch {
+                        VoiceRepository.deleteElevenLabsVoice(voiceTriple.second)
+                        onDeleteVoice(voiceTriple)
                     }
-                    FloatingActionButton(onClick = { isAddingNew = true }, containerColor = MaterialTheme.colorScheme.primary) {
-                        Icon(Icons.Default.Add, contentDescription = "알람 추가")
-                    }
-                }
-            }
-        ) { padding ->
-            if (alarmList.isEmpty()) {
-                Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(text = "설정된 알람이 없습니다.", color = Color.Gray)
-                }
-            } else {
-                LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
-                    items(items = alarmList, key = { it.id }) { alarm ->
-                        AlarmRow(
-                            alarm = alarm,
-                            onToggle = { isChecked ->
-                                alarmList = alarmList.map { if (it.id == alarm.id) it.copy(isEnabled = isChecked) else it }.sortByTime()
-                                if (isChecked) {
-                                    onSetAlarm(alarm.copy(isEnabled = true))
-                                    Toast.makeText(context, "알람이 켜졌습니다.", Toast.LENGTH_SHORT).show()
+                },
+                onSave = { h, m, msg, days, vId, _, _, sound, vib ->
+                    scope.launch {
+                        try {
+                            var localPath: String? = null
+                            var finalVoiceId = vId
+                            if (!vId.startsWith("ko-KR-")) {
+                                val amPm = if (h < 12) "오전" else "오후"
+                                val displayHour = if (h % 12 == 0) 12 else h % 12
+                                val fullText = "현재 시간은 ${amPm} ${displayHour}시 ${m}분입니다. $msg"
+                                
+                                val audioFile = try {
+                                    withContext(Dispatchers.IO) {
+                                        VoiceRepository.makeElevenLabsVoiceFile(vId, fullText, context)
+                                    }
+                                } catch (e: Exception) { null }
+
+                                if (audioFile != null && audioFile.exists()) {
+                                    localPath = audioFile.absolutePath
+                                    finalVoiceId = pureVoiceIdExtractor(audioFile.name)
                                 } else {
-                                    onCancelAlarm(alarm)
-                                    Toast.makeText(context, "알람이 꺼졌습니다.", Toast.LENGTH_SHORT).show()
+                                    finalVoiceId = "ko-KR-Standard-A"
                                 }
-                            },
-                            onClick = { editingAlarm = alarm },
-                            onDelete = { pendingDeleteAlarm = alarm }
+                            }
+                            val currentAlarm = if (isAddingNew) {
+                                AlarmItem(hour = h, minute = m, message = msg, repeatDays = days, voiceName = finalVoiceId, localFilePath = localPath, isEnabled = true, isSoundEnabled = sound, isVibrationEnabled = vib)
+                            } else {
+                                val original = editingAlarm!!
+                                if (original.isEnabled) onCancelAlarm(original)
+                                original.copy(hour = h, minute = m, message = msg, repeatDays = days, voiceName = finalVoiceId, localFilePath = localPath, isEnabled = original.isEnabled, isSoundEnabled = sound, isVibrationEnabled = vib)
+                            }
+                            alarmList = (if (isAddingNew) alarmList + currentAlarm else alarmList.map { if (it.id == currentAlarm.id) currentAlarm else it }).sortByTime()
+                            if (currentAlarm.isEnabled) onSetAlarm(currentAlarm)
+                            isAddingNew = false
+                            editingAlarm = null
+                        } catch (e: Exception) { Log.e("ALARM_SAVE", "${e.message}") }
+                    }
+                },
+                onCancel = { isAddingNew = false; editingAlarm = null }
+            )
+        } else {
+            Scaffold(
+                topBar = { 
+                    CenterAlignedTopAppBar(
+                        title = { 
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_voice_wake_logo),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Voice Wake",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                            containerColor = Color.Transparent
                         )
+                    ) 
+                },
+                floatingActionButton = {
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        FloatingActionButton(
+                            onClick = { showVoiceRegistration = true }, 
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(Icons.Default.Mic, contentDescription = "목소리 등록")
+                        }
+                        FloatingActionButton(
+                            onClick = { isAddingNew = true }, 
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "알람 추가")
+                        }
                     }
                 }
-            }
-            if (showVoiceRegistration) {
-                VoiceRegistrationDialog(
-                    onDismiss = { showVoiceRegistration = false },
-                    onGenerateVoice = { file, name ->
-                        onGenerateVoice(file, "", name) { _ -> }
-                        showVoiceRegistration = false
+            ) { padding ->
+                if (alarmList.isEmpty()) {
+                    Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(text = "설정된 알람이 없습니다.", color = Color.Gray)
                     }
-                )
+                } else {
+                    LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
+                        items(items = alarmList, key = { it.id }) { alarm ->
+                            AlarmRow(
+                                alarm = alarm,
+                                onToggle = { isChecked ->
+                                    alarmList = alarmList.map { if (it.id == alarm.id) it.copy(isEnabled = isChecked) else it }.sortByTime()
+                                    if (isChecked) {
+                                        onSetAlarm(alarm.copy(isEnabled = true))
+                                        Toast.makeText(context, "알람이 켜졌습니다.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        onCancelAlarm(alarm)
+                                        Toast.makeText(context, "알람이 꺼졌습니다.", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                onClick = { editingAlarm = alarm },
+                                onDelete = { pendingDeleteAlarm = alarm }
+                            )
+                        }
+                    }
+                }
+                if (showVoiceRegistration) {
+                    VoiceRegistrationDialog(
+                        onDismiss = { showVoiceRegistration = false },
+                        onGenerateVoice = { file, name ->
+                            onGenerateVoice(file, "", name) { _ -> }
+                            showVoiceRegistration = false
+                        }
+                    )
+                }
             }
         }
     }

@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -30,6 +32,7 @@ fun AlarmRow(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     val dayLabels = listOf("월", "화", "수", "목", "금", "토", "일")
 
     val amPm = remember(alarm.hour) { if (alarm.hour < 12) "오전" else "오후" }
@@ -95,12 +98,19 @@ fun AlarmRow(
                 ) {
                     Switch(
                         checked = alarm.isEnabled,
-                        onCheckedChange = onToggle,
+                        onCheckedChange = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onToggle(it) 
+                        },
                         modifier = Modifier.scale(0.7f) // 💡 조금 더 축소
                     )
 
                     IconButton(
-                        onClick = onDelete,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            Log.d("ALARM_DEBUG", "삭제 버튼 클릭됨: ${alarm.id}")
+                            onDelete()
+                        },
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(

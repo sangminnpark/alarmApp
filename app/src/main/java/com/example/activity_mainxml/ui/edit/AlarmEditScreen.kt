@@ -48,9 +48,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -88,6 +90,7 @@ fun AlarmEditScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
+    val haptic = LocalHapticFeedback.current
     val scrollState = rememberScrollState()
     val calendar = remember { Calendar.getInstance() }
     val currentHour24 = calendar.get(Calendar.HOUR_OF_DAY)
@@ -378,6 +381,7 @@ fun AlarmEditScreen(
                 ) { Text("취소") }
                 Button(
                     onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         // 1. 중복 클릭 방지
                         if (isSaving) return@Button
 
@@ -416,6 +420,7 @@ fun TimeInputUnit(
     isMinute: Boolean = false,
     isHour: Boolean = false
 ) {
+    val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
 
@@ -436,6 +441,7 @@ fun TimeInputUnit(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         // 💡 위쪽 화살표 버튼 복구
         IconButton(onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             isTyping = false
             val next = if (value < range.last) value + 1 else range.first
             onValueChange(next)
@@ -496,6 +502,7 @@ fun TimeInputUnit(
 
         // 💡 아래쪽 화살표 버튼 복구
         IconButton(onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             isTyping = false
             val prev = if (value > range.first) value - 1 else range.last
             onValueChange(prev)
