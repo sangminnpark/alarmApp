@@ -13,6 +13,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -337,11 +338,15 @@ fun AlarmEditScreen(
                     ) { Box(contentAlignment = Alignment.Center) { Text(label, fontSize = 12.sp) } }
                 }
             }
+            // 메시지 입력 칸: 둥근 모서리, 최대 높이 제한 및 내부 스크롤 (컬러 설정 제거)
             OutlinedTextField(
                 value = message,
                 onValueChange = { message = it },
                 label = { Text("보이스 메시지") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 150.dp),
+                shape = RoundedCornerShape(16.dp)
             )
 
             Spacer(modifier = Modifier.height(16.dp))

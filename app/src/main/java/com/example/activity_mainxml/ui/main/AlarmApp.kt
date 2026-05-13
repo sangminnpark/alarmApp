@@ -2,6 +2,7 @@ package com.example.activity_mainxml.ui.main
 
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,7 +15,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.activity_mainxml.R
 import com.example.activity_mainxml.data.VoiceRepository
 import com.example.activity_mainxml.model.AlarmItem
 import com.example.activity_mainxml.ui.edit.AlarmEditScreen
@@ -148,7 +152,29 @@ fun AlarmApp(
         )
     } else {
         Scaffold(
-            topBar = { CenterAlignedTopAppBar(title = { Text("내 보이스 알람") }) },
+            topBar = { 
+                CenterAlignedTopAppBar(
+                    title = { 
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_voice_wake_logo),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Voice Wake",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = Color.Transparent
+                    )
+                ) 
+            },
             floatingActionButton = {
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     FloatingActionButton(onClick = { showVoiceRegistration = true }, containerColor = MaterialTheme.colorScheme.secondaryContainer) {
