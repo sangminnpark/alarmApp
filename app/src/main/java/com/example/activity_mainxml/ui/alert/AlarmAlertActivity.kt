@@ -16,6 +16,8 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
@@ -25,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.activity_mainxml.BuildConfig
@@ -85,14 +88,17 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             val currentMin = calendar.get(Calendar.MINUTE)
             val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
             
-            // 💡 실시간 현재 시간 UI 업데이트 (메인 시간)
             currentTime = String.format("%02d:%02d", currentHour, currentMin)
 
-            // 분이 바뀌었을 때만 음성 갱신
+            // 분이 바뀌었을 때 (사운드가 켜져 있을 때만 음성 갱신)
             if (isAlarmActive && currentMin != lastMinute && lastMinute != -1) {
-                Log.d("ALARM_DEBUG", "분 변경 감지 ($lastMinute -> $currentMin), 음성 갱신")
-                stopAlarmVoiceOnly()
-                playAlarmVoice()
+                Log.d("ALARM_DEBUG", "분 변경 감지 ($lastMinute -> $currentMin)")
+                if (isSoundEnabled) {
+                    stopAlarmVoiceOnly()
+                    playAlarmVoice()
+                } else {
+                    lastMinute = currentMin
+                }
             }
             handler.postDelayed(this, 1000)
         }
@@ -135,31 +141,60 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.errorContainer) {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(24.dp),
-                    verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(Icons.Default.Notifications, null, modifier = Modifier.size(100.dp))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    if (setAlarmTimeText.isNotBlank()) {
+                    // 상단 콘텐츠 영역 (중앙 정렬 및 남은 공간 차지)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Notifications, null, modifier = Modifier.size(100.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        if (setAlarmTimeText.isNotBlank()) {
+                            Text(
+                                text = "설정된 알람: $setAlarmTimeText",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "설정된 알람: $setAlarmTimeText",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                            text = currentTime, 
+                            style = MaterialTheme.typography.displayLarge, 
+                            fontWeight = FontWeight.Black
                         )
+                        
+                        if (message.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            // 메시지가 길 경우를 대비해 스크롤 가능하게 처리
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                Text(
+                                    text = message, 
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
                     }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = currentTime, style = MaterialTheme.typography.displayLarge, fontWeight = FontWeight.Black)
-                    if (message.isNotBlank()) {
-                        Text(text = message, style = MaterialTheme.typography.headlineSmall)
-                    }
-                    Spacer(modifier = Modifier.height(48.dp))
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // 종료 버튼 (하단 고정)
                     Button(
                         onClick = { stopAlarm(); finish() },
                         modifier = Modifier.fillMaxWidth().height(64.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) { Text("알람 종료", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = MaterialTheme.shapes.large
+                    ) { 
+                        Text("알람 종료", fontSize = 22.sp, fontWeight = FontWeight.Bold) 
+                    }
                 }
             }
         }
@@ -178,20 +213,25 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun startVibration() {
-        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-            vibratorManager.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        }
+        try {
+            vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vibratorManager.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(VIBRATOR_SERVICE) as Vibrator
+            }
 
-        val pattern = longArrayOf(0, 1000, 1000) // 1초 진동, 1초 대기
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator?.vibrate(pattern, 0)
+            val pattern = longArrayOf(0, 1000, 1000) // 1초 진동, 1초 대기
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0)) // 0: 무한 반복
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(pattern, 0)
+            }
+            Log.d("ALARM_DEBUG", "진동 시작됨")
+        } catch (e: Exception) {
+            Log.e("ALARM_DEBUG", "진동 시작 실패: ${e.message}")
         }
     }
 
@@ -230,7 +270,7 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun playAlarmVoice() {
-        if (!isAlarmActive) return
+        if (!isAlarmActive || !isSoundEnabled) return
         requestAudioFocus()
 
         val calendar = Calendar.getInstance()

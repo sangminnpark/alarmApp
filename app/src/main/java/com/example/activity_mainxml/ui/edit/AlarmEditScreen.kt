@@ -7,19 +7,10 @@ import android.net.Uri
 import android.util.Base64
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
@@ -418,26 +409,27 @@ fun TimeInputUnit(
     range: IntRange,
     label: String,
     isMinute: Boolean = false,
-    isHour: Boolean = false // 시간 표시 여부 추가
+    isHour: Boolean = false
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
 
     var isTyping by remember { mutableStateOf(false) }
 
-    // 화면 표시용 텍스트 상태 (시간과 분 모두 2자리 포맷 적용)
+    // 화면 표시용 텍스트 상태
     var textFieldValue by remember {
-        mutableStateOf(if (isMinute || isHour) String.format("%02d", value) else value.toString())
+        mutableStateOf(String.format("%02d", value))
     }
 
     // 외부 값 변경 감지 (화살표 버튼 등)
     LaunchedEffect(value) {
         if (!isTyping) {
-            textFieldValue = if (isMinute || isHour) String.format("%02d", value) else value.toString()
+            textFieldValue = String.format("%02d", value)
         }
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // 💡 위쪽 화살표 버튼 복구
         IconButton(onClick = {
             isTyping = false
             val next = if (value < range.last) value + 1 else range.first
@@ -454,8 +446,8 @@ fun TimeInputUnit(
                         return@BasicTextField
                     }
 
-                    // 💡 시간(hour) 입력 시 "0"으로 시작하는 것을 허용하여 "08" 입력을 가능하게 함
-                    if (isHour && input == "0") {
+                    // 💡 "0"으로 시작하는 입력을 허용하여 "08" 입력을 가능하게 함
+                    if (input == "0") {
                         isTyping = true
                         textFieldValue = "0"
                         return@BasicTextField
@@ -463,43 +455,41 @@ fun TimeInputUnit(
 
                     val intVal = input.toInt()
 
-                    // 1. 유효 범위 내의 입력 (1~12 또는 0~59)
                     if (intVal in range) {
                         isTyping = true
                         textFieldValue = input
                         onValueChange(intVal)
-                    }
-                    // 2. 범위 초과 시 (12시 초과 또는 59분 초과)
-                    else {
-                        if (intVal > range.last) {
-                            Toast.makeText(context, "${range.last}${label} 이하로 설정해주세요.", Toast.LENGTH_SHORT).show()
-                        }
-                        
-                        // 잘못된 입력이나 범위를 벗어난 경우 포커스 해제 및 초기화는 onFocusChanged에서 처리되도록 유도
+                    } else if (intVal > range.last) {
+                        Toast.makeText(context, "${range.last}${label} 이하로 설정해주세요.", Toast.LENGTH_SHORT).show()
                     }
                 }
-            }, modifier = Modifier
-                .width(60.dp)
+            }, 
+            modifier = Modifier
+                .width(80.dp)
                 .onFocusChanged { focusState ->
                     if (!focusState.isFocused) {
                         isTyping = false
-                        // 💡 포커스를 잃으면 무조건 08:05와 같은 2자리 포맷으로 강제 변환
                         textFieldValue = String.format("%02d", value)
                     }
-                }, textStyle = TextStyle(
-                fontSize = 32.sp,
+                }, 
+            textStyle = TextStyle(
+                fontSize = 48.sp,
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold
-            ), keyboardOptions = KeyboardOptions(
+            ), 
+            keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Number, imeAction = ImeAction.Done
-            ), keyboardActions = KeyboardActions(onDone = {
+            ), 
+            keyboardActions = KeyboardActions(onDone = {
                 isTyping = false
                 textFieldValue = String.format("%02d", value)
                 focusManager.clearFocus()
-            }), singleLine = true
+            }), 
+            singleLine = true
         )
 
+        // 💡 아래쪽 화살표 버튼 복구
         IconButton(onClick = {
             isTyping = false
             val prev = if (value > range.first) value - 1 else range.last
@@ -507,7 +497,7 @@ fun TimeInputUnit(
             focusManager.clearFocus()
         }) { Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(32.dp)) }
 
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     }
 }
 
