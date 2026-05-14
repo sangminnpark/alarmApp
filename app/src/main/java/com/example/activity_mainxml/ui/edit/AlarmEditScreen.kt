@@ -7,9 +7,12 @@ import android.net.Uri
 import android.util.Base64
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -19,63 +22,57 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import android.view.View
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.activity.compose.BackHandler
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import com.example.activity_mainxml.BuildConfig
+import com.example.activity_mainxml.data.remote.RetrofitClient
 import com.example.activity_mainxml.model.TtsAudioConfig
 import com.example.activity_mainxml.model.TtsInput
 import com.example.activity_mainxml.model.TtsModel
 import com.example.activity_mainxml.model.TtsVoice
-import com.example.activity_mainxml.data.remote.RetrofitClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Calendar
+import java.util.Locale
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AlarmEditScreen(
     alarm: AlarmItem?,
@@ -84,14 +81,30 @@ fun AlarmEditScreen(
     onSave: (Int, Int, String, Set<Int>, String, File?, String?, Boolean, Boolean) -> Unit,
     onCancel: () -> Unit
 ) {
-    BackHandler {
-        onCancel()
-    }
+    BackHandler { onCancel() }
+    
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val haptic = LocalHapticFeedback.current
     val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+    val view = LocalView.current
+    var dialogView by remember { mutableStateOf<View?>(null) }
+    
+    // 💡 키보드 상태 감지 (가장 확실한 높이 체크 방식)
+    val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0 || WindowInsets.isImeVisible
+
+    // 💡 다이얼로그 전용 윈도우 설정 (키보드 이벤트가 무시되지 않도록 보장)
+    SideEffect {
+        val window = (view.parent as? DialogWindowProvider)?.window
+        window?.let {
+            WindowCompat.setDecorFitsSystemWindows(it, false)
+            dialogView = it.decorView  // ← Dialog의 실제 View 저장
+        }
+    }
+
     val calendar = remember { Calendar.getInstance() }
     val currentHour24 = calendar.get(Calendar.HOUR_OF_DAY)
 
@@ -116,14 +129,11 @@ fun AlarmEditScreen(
     var message by remember { mutableStateOf(alarm?.message ?: "") }
     var selectedDays by remember { mutableStateOf(alarm?.repeatDays ?: (1..7).toSet()) }
 
-    // 사운드 및 진동 설정 상태
     var isSoundEnabled by remember { mutableStateOf(alarm?.isSoundEnabled ?: true) }
     var isVibrationEnabled by remember { mutableStateOf(alarm?.isVibrationEnabled ?: true) }
 
     val API_KEY = BuildConfig.GOOGLE_API_KEY
-    val dayLabels = listOf("월", "화", "수", "목", "금", "토", "일")
 
-    // VoiceInfo 데이터 클래스 정의
     data class VoiceInfo(
         val id: String,
         val displayName: String,
@@ -175,8 +185,7 @@ fun AlarmEditScreen(
                     )
                     val response = RetrofitClient.googleTtsService.synthesizeText(API_KEY, request)
                     if (response.isSuccessful && response.body() != null) {
-                        val audioBytes =
-                            Base64.decode(response.body()!!.audioContent, Base64.DEFAULT)
+                        val audioBytes = Base64.decode(response.body()!!.audioContent, Base64.DEFAULT)
                         val tempFile = File.createTempFile("preview_", "mp3", context.cacheDir)
                         FileOutputStream(tempFile).use { it.write(audioBytes) }
                         withContext(Dispatchers.Main) {
@@ -198,219 +207,230 @@ fun AlarmEditScreen(
 
     DisposableEffect(Unit) { onDispose { mediaPlayer?.release(); mediaPlayer = null } }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
+    Dialog(
+        onDismissRequest = onCancel,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        val dialogWindowView = LocalView.current
+
+        fun hideIme() {
+            focusManager.clearFocus()
+            ViewCompat.getWindowInsetsController(dialogWindowView)
+                ?.hide(WindowInsetsCompat.Type.ime())
+        }
+        // 💡 다이얼로그 최상위 컨테이너 - 모든 터치를 최우선적으로 가로챔
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp)
-                .verticalScroll(scrollState)
-                .pointerInput(Unit) { detectTapGestures(onTap = { focusManager.clearFocus() }) }) {
-
-            Text(
-                "알람 설정",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // 목소리 선택 드롭다운
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = !expanded },
-                modifier = Modifier.fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        // ACTION_DOWN만 감지 — detectTapGestures보다 훨씬 빠르고 확실
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        hideIme()
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .padding(vertical = 16.dp)
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            hideIme()
+                        }
+                    },
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                OutlinedTextField(
-                    value = currentVoice?.let { if (it.isCustom) "[내 목소리] ${it.displayName}" else "${it.displayName} (${it.gender})" }
-                        ?: "목소리를 선택하세요",
-                    onValueChange = {},
-                    readOnly = true,
+                Column(
                     modifier = Modifier
-                        .menuAnchor()
-                        .fillMaxWidth(),
-                    label = { Text("목소리 선택 (필수)") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) })
-                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    allVoices.forEach { voice ->
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween // 텍스트와 아이콘 양끝 배치
-                                ) {
-                                    Text(if (voice.isCustom) "🎙 ${voice.displayName}" else "🌐 ${voice.displayName} (${voice.gender})")
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState)
+                        .padding(20.dp)
+                ) {
+                    Text(
+                        text = if (alarm == null) "새 알람 추가" else "알람 수정",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
 
-                                    // ✨ 커스텀 목소리인 경우에만 삭제 아이콘 표시
-                                    if (voice.isCustom) {
-                                        IconButton(
-                                            onClick = {
-                                                // customVoices 리스트에서 해당 보이스를 찾아 onDeleteVoice 호출
-                                                val target = customVoices.find { it.second == voice.id }
-                                                target?.let { onDeleteVoice(it) }
-                                            }
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete, // 상단에 Icons.Default.Delete 임포트 필요
-                                                contentDescription = "삭제",
-                                                tint = Color.Red,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TimeInputUnit(value = hour, onValueChange = { hour = it }, range = 1..12, label = "시", isHour = true)
+                                Text(":", style = MaterialTheme.typography.displayMedium, modifier = Modifier.padding(horizontal = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                                TimeInputUnit(value = minute, onValueChange = { minute = it }, range = 0..59, label = "분", isMinute = true)
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier
+                                    .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                                    .padding(4.dp)
+                            ) {
+                                listOf(0 to "오전", 12 to "오후").forEach { (offset, label) ->
+                                    val isSelected = amPmOffset == offset
+                                    val bgColor by animateColorAsState(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent, label = "amPmBg")
+                                    val textColor by animateColorAsState(if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, label = "amPmText")
+
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .background(bgColor)
+                                            .clickable { amPmOffset = offset }
+                                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(label, color = textColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                                     }
                                 }
-                            },
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Text("반복 요일", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        val dayLabels = listOf("월", "화", "수", "목", "금", "토", "일")
+                        dayLabels.forEachIndexed { index, label ->
+                            val systemDayInt = if (index == 6) 1 else index + 2
+                            val isSelected = selectedDays.contains(systemDayInt)
+                            val bgColor by animateColorAsState(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, label = "dayBg")
+                            val textColor by animateColorAsState(if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, label = "dayText")
+
+                            Surface(
+                                onClick = { selectedDays = if (isSelected) selectedDays - systemDayInt else selectedDays + systemDayInt },
+                                modifier = Modifier.size(36.dp),
+                                shape = CircleShape,
+                                color = bgColor
+                            ) { Box(contentAlignment = Alignment.Center) { Text(label, fontSize = 12.sp, color = textColor, fontWeight = FontWeight.Bold) } }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+                        OutlinedTextField(
+                            value = currentVoice?.displayName ?: "목소리를 선택하세요",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("알람 목소리 (필수)", style = MaterialTheme.typography.labelSmall) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            shape = RoundedCornerShape(12.dp),
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+                        )
+                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            allVoices.forEach { voice ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(if (voice.isCustom) "🎙 ${voice.displayName}" else "🌐 ${voice.displayName} (${voice.gender})")
+                                            if (voice.isCustom) {
+                                                IconButton(
+                                                    onClick = {
+                                                        val target = customVoices.find { it.second == voice.id }
+                                                        target?.let { onDeleteVoice(it) }
+                                                    }
+                                                ) {
+                                                    Icon(Icons.Default.Delete, contentDescription = "삭제", tint = Color.Red, modifier = Modifier.size(20.dp))
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onClick = { selectedVoiceId = voice.id; expanded = false; playPreview(voice) }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = message,
+                        onValueChange = { message = it },
+                        label = { Text("보이스 메시지", style = MaterialTheme.typography.labelSmall) },
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 100.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Checkbox(checked = isSoundEnabled, onCheckedChange = { isSoundEnabled = it }, modifier = Modifier.scale(0.8f))
+                            Text("사운드", style = MaterialTheme.typography.labelMedium)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Checkbox(checked = isVibrationEnabled, onCheckedChange = { isVibrationEnabled = it }, modifier = Modifier.scale(0.8f))
+                            Text("진동", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                            Text("취소")
+                        }
+                        Button(
                             onClick = {
-                                selectedVoiceId = voice.id
-                                expanded = false
-                                playPreview(voice)
-                            })
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (isSaving) return@Button
+
+                                if (selectedVoiceId == null) {
+                                    Toast.makeText(context, "알람 목소리를 선택해주세요.", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+                                if (amPmOffset == null) {
+                                    Toast.makeText(context, "오전 또는 오후를 선택해주세요.", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+
+                                isSaving = true
+                                val finalHour = if (hour == 12) amPmOffset!! else amPmOffset!! + hour
+                                onSave(finalHour, minute, message, selectedDays, selectedVoiceId!!, null, null, isSoundEnabled, isVibrationEnabled)
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isSaving,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(if (isSaving) "저장 중..." else "저장", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 오전/오후 버튼
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(0 to "오전", 12 to "오후").forEach { (offset, label) ->
-                    Button(
-                        onClick = { amPmOffset = offset; focusManager.clearFocus() },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (amPmOffset == offset) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (amPmOffset == offset) Color.White else Color.Gray
-                        )
-                    ) { Text(label) }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 시간 입력 부분 (수정됨)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TimeInputUnit(
-                    value = hour,
-                    onValueChange = { hour = it },
-                    range = 1..12,
-                    label = "시",
-                    isMinute = false,
-                    isHour = true // 💡 시간도 2자리 포맷 적용
-                )
-                Text(
-                    ":",
-                    style = MaterialTheme.typography.displaySmall,
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                TimeInputUnit(
-                    value = minute,
-                    onValueChange = { minute = it },
-                    range = 0..59,
-                    label = "분",
-                    isMinute = true
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            // ... (요일, 메시지, 저장 버튼 등 나머지 코드는 기존과 동일) ...
-            Text("반복 요일", style = MaterialTheme.typography.bodyMedium)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                dayLabels.forEachIndexed { index, label ->
-                    val systemDayInt = if (index == 6) 1 else index + 2
-                    val isSelected = selectedDays.contains(systemDayInt)
-                    Surface(
-                        onClick = {
-                            selectedDays =
-                                if (isSelected) selectedDays - systemDayInt else selectedDays + systemDayInt
-                        },
-                        modifier = Modifier.size(40.dp),
-                        shape = CircleShape,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (isSelected) Color.White else Color.Black
-                    ) { Box(contentAlignment = Alignment.Center) { Text(label, fontSize = 12.sp) } }
-                }
-            }
-            // 메시지 입력 칸: 둥근 모서리, 최대 높이 제한 및 내부 스크롤 (컬러 설정 제거)
-            OutlinedTextField(
-                value = message,
-                onValueChange = { message = it },
-                label = { Text("보이스 메시지") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 150.dp),
-                shape = RoundedCornerShape(16.dp)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 알림 모드 설정 (사운드/진동)
-            Text("알림 방식", style = MaterialTheme.typography.bodyMedium)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = isSoundEnabled, onCheckedChange = { isSoundEnabled = it })
-                    Text("사운드")
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = isVibrationEnabled, onCheckedChange = { isVibrationEnabled = it })
-                    Text("진동")
-                }
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onCancel, modifier = Modifier.weight(1f), enabled = !isSaving
-                ) { Text("취소") }
-                Button(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        // 1. 중복 클릭 방지
-                        if (isSaving) return@Button
-
-                        // 2. 필수 선택 사항 체크 (목소리)
-                        if (selectedVoiceId == null) {
-                            Toast.makeText(context, "알람 목소리를 선택해주세요.", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-
-                        // 3. 필수 선택 사항 체크 (오전/오후)
-                        if (amPmOffset == null) {
-                            Toast.makeText(context, "오전 또는 오후를 선택해주세요.", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-
-                        // 4. 모든 조건 만족 시 저장 진행
-                        isSaving = true
-                        val finalHour = if (hour == 12) amPmOffset!! else amPmOffset!! + hour
-                        onSave(
-                            finalHour, minute, message, selectedDays, selectedVoiceId!!, null, null,
-                            isSoundEnabled, isVibrationEnabled
-                        )
-                    }, modifier = Modifier.weight(1f), enabled = !isSaving
-                ) { Text(if (isSaving) "저장 중..." else "저장") }
             }
         }
     }
 }
-
+fun View.hideKeyboard() {
+    ViewCompat.getWindowInsetsController(this)?.hide(WindowInsetsCompat.Type.ime())
+}
 @Composable
 fun TimeInputUnit(
     value: Int,
@@ -425,21 +445,15 @@ fun TimeInputUnit(
     val focusManager = LocalFocusManager.current
 
     var isTyping by remember { mutableStateOf(false) }
+    var textFieldValue by remember { mutableStateOf(String.format(Locale.US, "%02d", value)) }
 
-    // 화면 표시용 텍스트 상태
-    var textFieldValue by remember {
-        mutableStateOf(String.format("%02d", value))
-    }
-
-    // 외부 값 변경 감지 (화살표 버튼 등)
     LaunchedEffect(value) {
         if (!isTyping) {
-            textFieldValue = String.format("%02d", value)
+            textFieldValue = String.format(Locale.US, "%02d", value)
         }
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        // 💡 위쪽 화살표 버튼 복구
         IconButton(onClick = {
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             isTyping = false
@@ -449,23 +463,20 @@ fun TimeInputUnit(
         }) { Icon(Icons.Default.KeyboardArrowUp, null, modifier = Modifier.size(32.dp)) }
 
         BasicTextField(
-            value = textFieldValue, onValueChange = { input ->
+            value = textFieldValue,
+            onValueChange = { input ->
                 if (input.all { it.isDigit() } && input.length <= 2) {
                     if (input.isEmpty()) {
                         isTyping = true
                         textFieldValue = ""
                         return@BasicTextField
                     }
-
-                    // 💡 "0"으로 시작하는 입력을 허용하여 "08" 입력을 가능하게 함
                     if (input == "0") {
                         isTyping = true
                         textFieldValue = "0"
                         return@BasicTextField
                     }
-
                     val intVal = input.toInt()
-
                     if (intVal in range) {
                         isTyping = true
                         textFieldValue = input
@@ -480,7 +491,7 @@ fun TimeInputUnit(
                 .onFocusChanged { focusState ->
                     if (!focusState.isFocused) {
                         isTyping = false
-                        textFieldValue = String.format("%02d", value)
+                        textFieldValue = String.format(Locale.US, "%02d", value)
                     }
                 }, 
             textStyle = TextStyle(
@@ -489,18 +500,15 @@ fun TimeInputUnit(
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold
             ), 
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Number, imeAction = ImeAction.Done
-            ), 
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done), 
             keyboardActions = KeyboardActions(onDone = {
                 isTyping = false
-                textFieldValue = String.format("%02d", value)
+                textFieldValue = String.format(Locale.US, "%02d", value)
                 focusManager.clearFocus()
             }), 
             singleLine = true
         )
 
-        // 💡 아래쪽 화살표 버튼 복구
         IconButton(onClick = {
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             isTyping = false
