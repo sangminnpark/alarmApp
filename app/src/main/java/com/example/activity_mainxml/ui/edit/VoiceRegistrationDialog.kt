@@ -7,6 +7,7 @@ import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +15,9 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -31,7 +35,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -45,7 +48,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import java.io.File
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -60,12 +65,12 @@ fun VoiceRegistrationDialog(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
+    val view = LocalView.current
     
-    // 💡 키보드 상태 감지 (가장 확실한 높이 체크 방식)
+    // 💡 키보드 상태 감지
     val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0 || WindowInsets.isImeVisible
 
-    // 💡 다이얼로그 윈도우 인셋 설정 (키보드 감지 정확도 향상)
-    val view = LocalView.current
+    // 💡 다이얼로그 전용 윈도우 설정
     SideEffect {
         val window = (view.parent as? DialogWindowProvider)?.window
         window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
@@ -212,38 +217,38 @@ fun VoiceRegistrationDialog(
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isRecording) onDismiss() },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             dismissOnClickOutside = false
         )
     ) {
-        // 💡 다이얼로그 최상위 컨테이너 - 모든 터치를 먼저 가로챔
+        val dialogWindowView = LocalView.current
+        fun hideIme() {
+            focusManager.clearFocus()
+            ViewCompat.getWindowInsetsController(dialogWindowView)?.hide(WindowInsetsCompat.Type.ime())
+        }
+
+        var keyboardWasVisibleAtDown by remember { mutableStateOf(false) }
+
+        // 💡 다이얼로그 최상위 컨테이너
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.5f))
                 .pointerInput(isKeyboardVisible) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            // 터치가 시작될 때 (다운 이벤트)
-                            if (event.changes.any { it.pressed }) {
-                                if (isKeyboardVisible) {
-                                    // 키보드가 있다면 포커스를 해제하여 키보드를 내림
-                                    focusManager.clearFocus()
-                                    keyboardController?.hide()
-                                }
-                            }
-                        }
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        keyboardWasVisibleAtDown = isKeyboardVisible
+                        if (isKeyboardVisible) hideIme()
                     }
                 }
                 .clickable(
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() }
                 ) {
-                    // 키보드가 없을 때 배경 터치 시에만 닫기
-                    if (!isKeyboardVisible && !isRecording) onDismiss()
+                    // 키보드가 없었고 녹음 중이 아닐 때 배경 클릭 시 닫기
+                    if (!keyboardWasVisibleAtDown && !isRecording) onDismiss()
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -255,8 +260,7 @@ fun VoiceRegistrationDialog(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
                     ) {
-                        // 카드 영역 클릭 시 키보드 숨김 (Initial Pass에서 처리되지만 안전장치로 유지)
-                        focusManager.clearFocus()
+                        // 카드 내부 클릭은 배경의 '창 닫기'가 작동하지 않도록 소비
                     },
                 shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDE7))

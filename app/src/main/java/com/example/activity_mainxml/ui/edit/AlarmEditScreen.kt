@@ -91,18 +91,14 @@ fun AlarmEditScreen(
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
     val view = LocalView.current
-    var dialogView by remember { mutableStateOf<View?>(null) }
     
-    // 💡 키보드 상태 감지 (가장 확실한 높이 체크 방식)
+    // 💡 키보드 상태 감지
     val isKeyboardVisible = WindowInsets.ime.getBottom(density) > 0 || WindowInsets.isImeVisible
 
-    // 💡 다이얼로그 전용 윈도우 설정 (키보드 이벤트가 무시되지 않도록 보장)
+    // 💡 다이얼로그 전용 윈도우 설정
     SideEffect {
         val window = (view.parent as? DialogWindowProvider)?.window
-        window?.let {
-            WindowCompat.setDecorFitsSystemWindows(it, false)
-            dialogView = it.decorView  // ← Dialog의 실제 View 저장
-        }
+        window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
     }
 
     val calendar = remember { Calendar.getInstance() }
@@ -215,23 +211,31 @@ fun AlarmEditScreen(
         )
     ) {
         val dialogWindowView = LocalView.current
-
         fun hideIme() {
             focusManager.clearFocus()
-            ViewCompat.getWindowInsetsController(dialogWindowView)
-                ?.hide(WindowInsetsCompat.Type.ime())
+            ViewCompat.getWindowInsetsController(dialogWindowView)?.hide(WindowInsetsCompat.Type.ime())
         }
-        // 💡 다이얼로그 최상위 컨테이너 - 모든 터치를 최우선적으로 가로챔
+
+        var keyboardWasVisibleAtDown by remember { mutableStateOf(false) }
+
+        // 💡 다이얼로그 최상위 컨테이너
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.5f))
-                .pointerInput(Unit) {
+                .pointerInput(isKeyboardVisible) {
                     awaitEachGesture {
-                        // ACTION_DOWN만 감지 — detectTapGestures보다 훨씬 빠르고 확실
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        hideIme()
+                        awaitFirstDown(requireUnconsumed = false)
+                        keyboardWasVisibleAtDown = isKeyboardVisible
+                        if (isKeyboardVisible) hideIme()
                     }
+                }
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {
+                    // 터치 시작 시점에 키보드가 없었다면 배경 클릭 시 닫기
+                    if (!keyboardWasVisibleAtDown) onCancel()
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -239,11 +243,11 @@ fun AlarmEditScreen(
                 modifier = Modifier
                     .fillMaxWidth(0.9f)
                     .padding(vertical = 16.dp)
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false)
-                            hideIme()
-                        }
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) {
+                        // 카드 내부 클릭은 배경의 '창 닫기'가 작동하지 않도록 소비
                     },
                 shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -428,9 +432,7 @@ fun AlarmEditScreen(
         }
     }
 }
-fun View.hideKeyboard() {
-    ViewCompat.getWindowInsetsController(this)?.hide(WindowInsetsCompat.Type.ime())
-}
+
 @Composable
 fun TimeInputUnit(
     value: Int,
