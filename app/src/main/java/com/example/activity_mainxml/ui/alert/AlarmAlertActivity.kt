@@ -351,34 +351,25 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun playCustomVoiceFile(file: File) {
-        try {
-            if (mediaPlayer == null) mediaPlayer = MediaPlayer() else mediaPlayer?.reset()
-            mediaPlayer?.apply {
-                setDataSource(file.absolutePath)
-                // 💡 미디어 스트림을 사용하여 이어폰/블루투스 연결 시 해당 기기로 출력되도록 설정
-                val attr = android.media.AudioAttributes.Builder()
-                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-                setAudioAttributes(attr)
-                setVolume(currentVolume, currentVolume)
-                isLooping = false
-                prepare()
-                start()
-                if (currentVolume < MAX_VOLUME) currentVolume += FADE_STEP
-                setOnCompletionListener { if (isAlarmActive) handler.postDelayed({ playAlarmVoice() }, 1000) }
-            }
-        } catch (e: Exception) { fallbackToDefaultTts(message) }
+        setupAndStartMediaPlayer(file.absolutePath)
     }
 
     private fun playAudio(audioBytes: ByteArray) {
         try {
             val tempFile = File.createTempFile("tts_temp", "mp3", cacheDir)
             FileOutputStream(tempFile).use { it.write(audioBytes) }
+            setupAndStartMediaPlayer(tempFile.absolutePath)
+        } catch (e: Exception) {
+            Log.e("ALARM_DEBUG", "playAudio error: ${e.message}")
+            fallbackToDefaultTts(message)
+        }
+    }
+
+    private fun setupAndStartMediaPlayer(path: String) {
+        try {
             if (mediaPlayer == null) mediaPlayer = MediaPlayer() else mediaPlayer?.reset()
             mediaPlayer?.apply {
-                setDataSource(tempFile.absolutePath)
-                // 💡 미디어 스트림을 사용하여 이어폰/블루투스 연결 시 해당 기기로 출력되도록 설정
+                setDataSource(path)
                 val attr = android.media.AudioAttributes.Builder()
                     .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
@@ -389,9 +380,14 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 prepare()
                 start()
                 if (currentVolume < MAX_VOLUME) currentVolume += FADE_STEP
-                setOnCompletionListener { if (isAlarmActive) handler.postDelayed({ playAlarmVoice() }, 1000) }
+                setOnCompletionListener {
+                    if (isAlarmActive) handler.postDelayed({ playAlarmVoice() }, 1000)
+                }
             }
-        } catch (e: Exception) { fallbackToDefaultTts(message) }
+        } catch (e: Exception) {
+            Log.e("ALARM_DEBUG", "MediaPlayer error: ${e.message}")
+            fallbackToDefaultTts(message)
+        }
     }
 
     private fun fallbackToDefaultTts(text: String) {

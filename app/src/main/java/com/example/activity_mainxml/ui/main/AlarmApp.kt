@@ -51,7 +51,9 @@ fun AlarmApp(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var alarmList by remember { mutableStateOf(initialAlarms.sortByTime()) }
+    var alarmList by remember { mutableStateOf(initialAlarms) }
+    val sortedAlarms = remember(alarmList) { alarmList.sortByTime() }
+    
     var editingAlarm by remember { mutableStateOf<AlarmItem?>(null) }
     var isAddingNew by remember { mutableStateOf(false) }
     var pendingDeleteAlarm by remember { mutableStateOf<AlarmItem?>(null) }
@@ -134,12 +136,13 @@ fun AlarmApp(
                                 }
                             }
                             val currentAlarm = if (isAddingNew) {
-                                AlarmItem(hour = h, minute = m, message = msg, repeatDays = days, voiceName = finalVoiceId, localFilePath = localPath, isEnabled = true, isSoundEnabled = sound, isVibrationEnabled = vib)
+                                AlarmItem(hour = h, minute = m, message = msg, repeatDays = days, voiceId = finalVoiceId, voiceName = finalVoiceId, localFilePath = localPath, isEnabled = true, isSoundEnabled = sound, isVibrationEnabled = vib)
                             } else {
                                 val original = editingAlarm!!
                                 if (original.isEnabled) onCancelAlarm(original)
-                                original.copy(hour = h, minute = m, message = msg, repeatDays = days, voiceName = finalVoiceId, localFilePath = localPath, isEnabled = original.isEnabled, isSoundEnabled = sound, isVibrationEnabled = vib)
+                                original.copy(hour = h, minute = m, message = msg, repeatDays = days, voiceId = finalVoiceId, voiceName = finalVoiceId, localFilePath = localPath, isEnabled = original.isEnabled, isSoundEnabled = sound, isVibrationEnabled = vib)
                             }
+                            // 💡 수정 후에도 리스트 정렬 유지
                             alarmList = (if (isAddingNew) alarmList + currentAlarm else alarmList.map { if (it.id == currentAlarm.id) currentAlarm else it }).sortByTime()
                             if (currentAlarm.isEnabled) onSetAlarm(currentAlarm)
                             isAddingNew = false
@@ -199,11 +202,11 @@ fun AlarmApp(
                     }
                 } else {
                     LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
-                        items(items = alarmList, key = { it.id }) { alarm ->
+                        items(items = sortedAlarms, key = { it.id }) { alarm ->
                             AlarmRow(
                                 alarm = alarm,
                                 onToggle = { isChecked ->
-                                    alarmList = alarmList.map { if (it.id == alarm.id) it.copy(isEnabled = isChecked) else it }.sortByTime()
+                                    alarmList = alarmList.map { if (it.id == alarm.id) it.copy(isEnabled = isChecked) else it }
                                     if (isChecked) {
                                         onSetAlarm(alarm.copy(isEnabled = true))
                                         Toast.makeText(context, "알람이 켜졌습니다.", Toast.LENGTH_SHORT).show()
