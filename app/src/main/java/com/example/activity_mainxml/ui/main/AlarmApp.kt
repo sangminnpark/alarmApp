@@ -2,13 +2,19 @@ package com.example.activity_mainxml.ui.main
 
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.ViewHeadline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,6 +51,17 @@ fun AlarmApp(
     onSaveToDisk: (List<AlarmItem>) -> Unit
 ) {
     var showVoiceRegistration by remember { mutableStateOf(false) }
+    var isSimpleMode by remember { mutableStateOf(false) } 
+    var selectedAlarmIds by remember { mutableStateOf(setOf<Int>()) } 
+    var isMultiSelectActive by remember { mutableStateOf(false) } // 💡 선택 모드 활성화 상태 독립 관리
+    val isSelectionMode = isMultiSelectActive
+
+    // 💡 선택 모드일 때 뒤로가기 버튼 처리: 모드 종료
+    BackHandler(enabled = isSelectionMode) {
+        isMultiSelectActive = false
+        selectedAlarmIds = emptySet()
+    }
+
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -54,6 +71,7 @@ fun AlarmApp(
     var editingAlarm by remember { mutableStateOf<AlarmItem?>(null) }
     var isAddingNew by remember { mutableStateOf(false) }
     var pendingDeleteAlarm by remember { mutableStateOf<AlarmItem?>(null) }
+    var showMultiDeleteConfirmation by remember { mutableStateOf(false) } // 💡 다중 삭제 확인 팝업 상태
 
     val pureVoiceIdExtractor = remember {
         { rawId: String ->
@@ -87,6 +105,31 @@ fun AlarmApp(
         )
     }
 
+    if (showMultiDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showMultiDeleteConfirmation = false },
+            title = { Text("다중 삭제") },
+            text = { Text("선택한 ${selectedAlarmIds.size}개의 알람을 정말 삭제하시겠습니까?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val toDelete = alarmList.filter { it.id in selectedAlarmIds }
+                        scope.launch {
+                            toDelete.forEach { onDeleteAlarm(it) }
+                            alarmList = alarmList.filter { it.id !in selectedAlarmIds }
+                            selectedAlarmIds = emptySet()
+                            isMultiSelectActive = false // 💡 삭제 후 모드 종료
+                            Toast.makeText(context, "${toDelete.size}개의 알람이 삭제되었습니다.", Toast.LENGTH_SHORT).show()
+                            showMultiDeleteConfirmation = false
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
+                ) { Text("삭제") }
+            },
+            dismissButton = { TextButton(onClick = { showMultiDeleteConfirmation = false }) { Text("취소") } }
+        )
+    }
+
     LaunchedEffect(alarmList) { onSaveToDisk(alarmList) }
 
     Scaffold(
@@ -94,19 +137,53 @@ fun AlarmApp(
         topBar = { 
             CenterAlignedTopAppBar(
                 title = { 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_voice_wake_logo),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Voice Wake",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
+                    if (isSelectionMode) {
+                        Text("${selectedAlarmIds.size}개 선택됨", style = MaterialTheme.typography.titleMedium)
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_voice_wake_logo),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Voice Wake",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    if (isSelectionMode) {
+                        IconButton(onClick = {
+                            if (selectedAlarmIds.size == alarmList.size) {
+                                selectedAlarmIds = emptySet()
+                            } else {
+                                selectedAlarmIds = alarmList.map { it.id }.toSet()
+                            }
+                        }) {
+                            Icon(Icons.Default.SelectAll, contentDescription = "전체 선택")
+                        }
+                        IconButton(onClick = { showMultiDeleteConfirmation = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "다중 삭제", tint = Color.Red)
+                        }
+                        IconButton(onClick = { 
+                            selectedAlarmIds = emptySet() 
+                            isMultiSelectActive = false // 💡 취소 버튼 누르면 모드 종료
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ViewList, contentDescription = "취소")
+                        }
+                    } else {
+                        IconButton(onClick = { isSimpleMode = !isSimpleMode }) {
+                            Icon(
+                                imageVector = if (isSimpleMode) Icons.Default.ViewHeadline else Icons.AutoMirrored.Filled.ViewList,
+                                contentDescription = "표시 모드 전환",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -133,28 +210,63 @@ fun AlarmApp(
             }
         }
     ) { padding ->
-        if (alarmList.isEmpty()) {
-            Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(text = "설정된 알람이 없습니다.", color = Color.Gray)
-            }
-        } else {
-            LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
-                items(items = sortedAlarms, key = { it.id }) { alarm ->
-                    AlarmRow(
-                        alarm = alarm,
-                        onToggle = { isChecked ->
-                            alarmList = alarmList.map { if (it.id == alarm.id) it.copy(isEnabled = isChecked) else it }
-                            if (isChecked) {
-                                onSetAlarm(alarm.copy(isEnabled = true))
-                                Toast.makeText(context, "알람이 켜졌습니다.", Toast.LENGTH_SHORT).show()
-                            } else {
-                                onCancelAlarm(alarm)
-                                Toast.makeText(context, "알람이 꺼졌습니다.", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        onClick = { editingAlarm = alarm },
-                        onDelete = { pendingDeleteAlarm = alarm }
-                    )
+        // 💡 선택 모드 중에 리스트 외 화면(배경) 터치 시 모드 해제
+        Box(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) {
+                    if (isSelectionMode) {
+                        isMultiSelectActive = false
+                        selectedAlarmIds = emptySet()
+                    }
+                }
+        ) {
+            if (alarmList.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(text = "설정된 알람이 없습니다.", color = Color.Gray)
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(items = sortedAlarms, key = { it.id }) { alarm ->
+                        AlarmRow(
+                            alarm = alarm,
+                            isSimpleMode = isSimpleMode,
+                            isSelected = selectedAlarmIds.contains(alarm.id),
+                            isSelectionMode = isSelectionMode,
+                            onToggle = { isChecked ->
+                                alarmList = alarmList.map { if (it.id == alarm.id) it.copy(isEnabled = isChecked) else it }
+                                if (isChecked) {
+                                    onSetAlarm(alarm.copy(isEnabled = true))
+                                    Toast.makeText(context, "알람이 켜졌습니다.", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    onCancelAlarm(alarm)
+                                    Toast.makeText(context, "알람이 꺼졌습니다.", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onClick = {
+                                if (isSelectionMode) {
+                                    selectedAlarmIds = if (selectedAlarmIds.contains(alarm.id)) {
+                                        selectedAlarmIds - alarm.id
+                                    } else {
+                                        selectedAlarmIds + alarm.id
+                                    }
+                                } else {
+                                    editingAlarm = alarm
+                                }
+                            },
+                            onLongClick = {
+                                if (!isSelectionMode) {
+                                    isMultiSelectActive = true // 💡 롱클릭 시 모드 활성화
+                                    selectedAlarmIds = setOf(alarm.id)
+                                }
+                            },
+                            onDelete = { pendingDeleteAlarm = alarm }
+                        )
+                    }
                 }
             }
         }

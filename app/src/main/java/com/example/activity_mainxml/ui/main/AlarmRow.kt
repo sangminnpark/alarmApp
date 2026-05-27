@@ -1,8 +1,10 @@
 package com.example.activity_mainxml.ui.main
 
 import com.example.activity_mainxml.model.AlarmItem
-import android.util.Log
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,15 +23,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun AlarmRow(
     alarm: AlarmItem,
+    isSimpleMode: Boolean = false,
+    isSelected: Boolean = false, // 💡 선택 상태
+    isSelectionMode: Boolean = false, // 💡 선택 모드 활성화 여부
     onToggle: (Boolean) -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit, // 💡 롱클릭 핸들러 추가
     onDelete: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
@@ -40,140 +48,165 @@ fun AlarmRow(
     val displayMinute = remember(alarm.minute) { String.format("%02d", alarm.minute) }
 
     // 파스텔 톤 색상
-    val activeColor = Color(0xFFE3F2FD) // 연한 파란색
-    val inactiveColor = Color(0xFFF5F5F5) // 연한 회색
+    val activeColor = Color(0xFFE3F2FD) 
+    val inactiveColor = Color(0xFFF5F5F5)
+    val selectedColor = MaterialTheme.colorScheme.primaryContainer // 💡 선택 시 색상
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(160.dp)
-            .padding(horizontal = 16.dp, vertical = 6.dp), // 상하 여백 약간 축소
-        onClick = onClick,
+            .animateContentSize()
+            .heightIn(min = if (isSimpleMode) 90.dp else 160.dp) // 💡 지표 추가를 위해 높이 약간 조정
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .pointerInput(isSelectionMode) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongClick() 
+                    }
+                )
+            },
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (alarm.isEnabled) activeColor else inactiveColor
+            containerColor = when {
+                isSelected -> selectedColor
+                alarm.isEnabled -> activeColor
+                else -> inactiveColor
+            }
         )
     ) {
         Row(
             modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp) // 내부 여백 축소
-                .fillMaxSize(),
+                .padding(horizontal = 16.dp, vertical = if (isSimpleMode) 10.dp else 12.dp)
+                .fillMaxWidth()
+                .wrapContentHeight(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 💡 왼쪽 영역 (55%로 약간 확장): 정보 및 제어
+            // 💡 선택 모드일 때 체크박스 표시
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+
+            // 💡 왼쪽 영역: 정보 및 제어
             Column(
-                modifier = Modifier
-                    .weight(1.1f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(4.dp) // 일정한 간격 유지
+                modifier = Modifier.weight(1.1f),
+                verticalArrangement = Arrangement.Center
             ) {
-                Column {
-                    Text(
-                        text = "$amPm $displayHour:$displayMinute",
-                        style = MaterialTheme.typography.titleLarge, // 💡 폰트 크기 약간 축소
-                        fontWeight = FontWeight.Bold,
-                        color = if (alarm.isEnabled) Color.Unspecified else Color.Gray
-                    )
-
-                    val daysText = remember(alarm.repeatDays) {
-                        if (alarm.repeatDays.isNotEmpty()) {
-                            alarm.repeatDays.sortedBy { if (it == 1) 8 else it }
-                                .joinToString(", ") { dayInt ->
-                                    val index = if (dayInt == 1) 6 else dayInt - 2
-                                    dayLabels[index]
-                                }
-                        } else "반복 없음"
-                    }
-                    Text(
-                        text = daysText,
-                        style = MaterialTheme.typography.labelSmall, // 💡 크기 축소
-                        color = Color.Gray
-                    )
-                }
-
-                // 💡 조작 버튼 영역 (더 컴팩트하게)
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.height(36.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Switch(
-                        checked = alarm.isEnabled,
-                        onCheckedChange = { 
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onToggle(it) 
-                        },
-                        modifier = Modifier.scale(0.7f) // 💡 조금 더 축소
-                    )
+                    Column {
+                        Text(
+                            text = "$amPm $displayHour:$displayMinute",
+                            style = if (isSimpleMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (alarm.isEnabled) Color.Unspecified else Color.Gray
+                        )
 
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            Log.d("ALARM_DEBUG", "삭제 버튼 클릭됨: ${alarm.id}")
-                            onDelete()
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "삭제",
-                            tint = Color.Gray.copy(alpha = 0.6f),
-                            modifier = Modifier.size(16.dp)
+                        val daysText = remember(alarm.repeatDays) {
+                            if (alarm.repeatDays.isNotEmpty()) {
+                                alarm.repeatDays.sortedBy { if (it == 1) 8 else it }
+                                    .joinToString(", ") { dayInt ->
+                                        val index = if (dayInt == 1) 6 else dayInt - 2
+                                        dayLabels[index]
+                                    }
+                            } else "반복 없음"
+                        }
+                        Text(
+                            text = daysText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.Gray
+                        )
+                    }
+
+                    if (isSimpleMode && !isSelectionMode) {
+                        Switch(
+                            checked = alarm.isEnabled,
+                            onCheckedChange = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onToggle(it) 
+                            },
+                            modifier = Modifier.scale(0.6f)
                         )
                     }
                 }
 
-                // 💡 알림 모드 아이콘 (명확히 보이도록 위치 고정)
+                // 💡 간단 모드에서도 지표 표시
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 2.dp)
+                    modifier = Modifier.padding(top = 4.dp)
                 ) {
                     if (!alarm.isSoundEnabled && !alarm.isVibrationEnabled) {
-                        ModeIndicator(
-                            icon = Icons.AutoMirrored.Filled.VolumeOff,
-                            text = "무음",
-                            isEnabled = alarm.isEnabled,
-                            color = Color.Gray
-                        )
+                        ModeIndicator(icon = Icons.AutoMirrored.Filled.VolumeOff, text = "무음", isEnabled = alarm.isEnabled, color = Color.Gray)
                     } else {
-                        if (alarm.isSoundEnabled) {
-                            ModeIndicator(
-                                icon = Icons.AutoMirrored.Filled.VolumeUp,
-                                text = "사운드",
-                                isEnabled = alarm.isEnabled,
-                                color = Color(0xFF4CAF50)
+                        if (alarm.isSoundEnabled) ModeIndicator(icon = Icons.AutoMirrored.Filled.VolumeUp, text = "사운드", isEnabled = alarm.isEnabled, color = Color(0xFF4CAF50))
+                        if (alarm.isVibrationEnabled) ModeIndicator(icon = Icons.Default.Vibration, text = "진동", isEnabled = alarm.isEnabled, color = Color(0xFF2196F3))
+                    }
+                }
+
+                if (!isSimpleMode) {
+                    // 💡 상세 모드에서만 보이는 버튼 영역
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.height(36.dp)
+                    ) {
+                        if (!isSelectionMode) {
+                            Switch(
+                                checked = alarm.isEnabled,
+                                onCheckedChange = { 
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onToggle(it) 
+                                },
+                                modifier = Modifier.scale(0.7f)
                             )
-                        }
-                        if (alarm.isVibrationEnabled) {
-                            ModeIndicator(
-                                icon = Icons.Default.Vibration,
-                                text = "진동",
-                                isEnabled = alarm.isEnabled,
-                                color = Color(0xFF2196F3)
-                            )
+
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onDelete()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "삭제",
+                                    tint = Color.Gray.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            if (!isSimpleMode) {
+                Spacer(modifier = Modifier.width(8.dp))
 
-            // 💡 오른쪽 영역 (45%): 메시지 텍스트
-            Box(
-                modifier = Modifier
-                    .weight(0.9f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.3f))
-                    .padding(8.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(
-                    text = alarm.message.ifBlank { "보이스 시간 알림" },
-                    color = if (alarm.isEnabled) MaterialTheme.colorScheme.primary else Color.Gray,
-                    style = MaterialTheme.typography.bodySmall,
-                    minLines = 3
-                )
+                // 💡 오른쪽 영역 (상세 모드 전용): 메시지 텍스트
+                Box(
+                    modifier = Modifier
+                        .weight(0.9f)
+                        .height(110.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.3f))
+                        .padding(8.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = alarm.message.ifBlank { "보이스 시간 알림" },
+                        color = if (alarm.isEnabled) MaterialTheme.colorScheme.primary else Color.Gray,
+                        style = MaterialTheme.typography.bodySmall,
+                        minLines = 3
+                    )
+                }
             }
         }
     }

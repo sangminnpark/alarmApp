@@ -90,6 +90,22 @@ fun VoiceRegistrationDialog(
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var audioDurationMillis by remember { mutableLongStateOf(0L) }
+    var currentPositionMillis by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (isPlaying) {
+                mediaPlayer?.let {
+                    try {
+                        currentPositionMillis = it.currentPosition.toLong()
+                    } catch (e: Exception) { isPlaying = false }
+                }
+                delay(50)
+            }
+        } else {
+            currentPositionMillis = 0L
+        }
+    }
 
     LaunchedEffect(isRecording) {
         if (isRecording) {
@@ -356,8 +372,18 @@ fun VoiceRegistrationDialog(
                                         modifier = Modifier.size(28.dp).clickable { if (isPlaying) stopPreview() else playPreview() }
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(text = if (recordFile != null) "녹음본 미리듣기" else "업로드 파일 미리듣기", style = MaterialTheme.typography.labelMedium, fontSize = (12 * fontScale).sp)
+                                        
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        LinearProgressIndicator(
+                                            progress = { if (audioDurationMillis > 0) currentPositionMillis.toFloat() / audioDurationMillis else 0f },
+                                            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                            color = Color(0xFFFBC02D),
+                                            trackColor = Color.LightGray.copy(alpha = 0.5f)
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+
                                         Text(text = String.format(Locale.US, "%.1f초 분량", audioDurationMillis / 1000f), style = MaterialTheme.typography.bodySmall, color = if (isValidDuration) Color.Gray else Color.Red, fontSize = (10 * fontScale).sp)
                                     }
                                 }
