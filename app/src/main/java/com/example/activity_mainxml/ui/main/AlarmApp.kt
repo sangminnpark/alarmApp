@@ -11,14 +11,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.ViewHeadline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -158,30 +159,49 @@ fun AlarmApp(
                 },
                 actions = {
                     if (isSelectionMode) {
-                        IconButton(onClick = {
-                            if (selectedAlarmIds.size == alarmList.size) {
-                                selectedAlarmIds = emptySet()
-                            } else {
-                                selectedAlarmIds = alarmList.map { it.id }.toSet()
-                            }
-                        }) {
-                            Icon(Icons.Default.SelectAll, contentDescription = "전체 선택")
+                        // 💡 전체 선택 체크박스 + 텍스트
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    selectedAlarmIds = if (selectedAlarmIds.size == alarmList.size) {
+                                        emptySet()
+                                    } else {
+                                        alarmList.map { it.id }.toSet()
+                                    }
+                                }
+                                .padding(horizontal = 4.dp)
+                        ) {
+                            Checkbox(
+                                checked = selectedAlarmIds.size == alarmList.size && alarmList.isNotEmpty(),
+                                onCheckedChange = null
+                            )
+                            Text(
+                                text = "전체",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
+                        
                         IconButton(onClick = { showMultiDeleteConfirmation = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "다중 삭제", tint = Color.Red)
                         }
+                        
                         IconButton(onClick = { 
                             selectedAlarmIds = emptySet() 
-                            isMultiSelectActive = false // 💡 취소 버튼 누르면 모드 종료
+                            isMultiSelectActive = false 
                         }) {
-                            Icon(Icons.AutoMirrored.Filled.ViewList, contentDescription = "취소")
+                            Icon(Icons.Default.Close, contentDescription = "취소")
                         }
                     } else {
-                        IconButton(onClick = { isSimpleMode = !isSimpleMode }) {
-                            Icon(
-                                imageVector = if (isSimpleMode) Icons.Default.ViewHeadline else Icons.AutoMirrored.Filled.ViewList,
-                                contentDescription = "표시 모드 전환",
-                                tint = MaterialTheme.colorScheme.primary
+                        // 💡 직관적인 텍스트 기반 모드 전환 버튼
+                        TextButton(onClick = { isSimpleMode = !isSimpleMode }) {
+                            Text(
+                                text = if (isSimpleMode) "상세 보기" else "간단 보기",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
