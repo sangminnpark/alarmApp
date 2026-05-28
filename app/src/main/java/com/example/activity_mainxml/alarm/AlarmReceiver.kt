@@ -4,8 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.util.Log
+import com.example.activity_mainxml.model.AlarmItem
 import com.example.activity_mainxml.ui.alert.AlarmAlertActivity
+import com.example.activity_mainxml.util.HolidayUtil
+import com.google.gson.Gson
 import java.util.Calendar
 
 class AlarmReceiver : BroadcastReceiver() {
@@ -25,6 +27,14 @@ class AlarmReceiver : BroadcastReceiver() {
         val alarmId = intent.getIntExtra("alarmId", -1)
         val localFilePath = intent.getStringExtra("localFilePath")
         val alarmJson = intent.getStringExtra("alarm_json")
+
+        // 💡 [공휴일 제외 로직]
+        if (alarmJson != null) {
+            val alarm = Gson().fromJson(alarmJson, AlarmItem::class.java)
+            if (alarm.isExcludeHolidays && HolidayUtil.isHoliday(context, Calendar.getInstance())) {
+                return
+            }
+        }
 
         val alertIntent = Intent(context, AlarmAlertActivity::class.java).apply {
             putExtra("msg", msg)

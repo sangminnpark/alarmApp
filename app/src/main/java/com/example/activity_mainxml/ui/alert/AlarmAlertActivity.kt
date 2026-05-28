@@ -12,7 +12,6 @@ import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Base64
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -213,7 +212,7 @@ class AlarmAlertActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             } else {
                 @Suppress("DEPRECATION") vibrator?.vibrate(pattern, 0)
             }
-        } catch (e: Exception) { Log.e("ALARM_DEBUG", "진동 시작 실패: ${e.message}") }
+        } catch (e: Exception) { }
     }
 
     private fun setupLockScreenVisible() {

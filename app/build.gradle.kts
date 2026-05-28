@@ -28,9 +28,11 @@ android {
         // 2. BuildConfig에 API 키 주입
         val googleKey = localProperties.getProperty("MAPS_API_KEY") ?: ""
         val elevenKey = localProperties.getProperty("ELEVEN_LABS_API_KEY") ?: ""
+        val holidayKey = localProperties.getProperty("HOLIDAY_API_KEY") ?: ""
 
         buildConfigField("String", "GOOGLE_API_KEY", "\"$googleKey\"")
         buildConfigField("String", "ELEVEN_LABS_API_KEY", "\"$elevenKey\"")
+        buildConfigField("String", "HOLIDAY_API_KEY", "\"$holidayKey\"")
 
         vectorDrawables {
             useSupportLibrary = true

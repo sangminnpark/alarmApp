@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
-import android.util.Log
 import com.example.activity_mainxml.data.VoiceRepository
 import com.example.activity_mainxml.model.AlarmItem
 import com.example.activity_mainxml.alarm.AlarmReceiver

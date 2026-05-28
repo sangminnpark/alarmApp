@@ -1,7 +1,6 @@
 package com.example.activity_mainxml.data
 
 import android.content.Context
-import android.util.Log
 import com.example.activity_mainxml.BuildConfig
 import com.example.activity_mainxml.data.remote.RetrofitClient.elevenLabsApi
 import com.example.activity_mainxml.model.ElevenLabsTtsRequest
@@ -31,14 +30,10 @@ object VoiceRepository {
                     files = listOf(audioPart)
                 )
 
-                Log.d("VoiceRepository", "일레븐랩스 목소리 등록 성공: ${response.voice_id}")
                 response.voice_id
             } catch (e: retrofit2.HttpException) {
-                val errorBody = e.response()?.errorBody()?.string()
-                Log.e("VoiceRepository", "HTTP 에러 발생 (${e.code()}): $errorBody")
                 null
             } catch (e: Exception) {
-                Log.e("VoiceRepository", "일레븐랩스 등록 실패: ${e.localizedMessage}")
                 null
             }
         }

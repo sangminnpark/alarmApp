@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -22,6 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import com.example.activity_mainxml.alarm.AlarmScheduler
 import com.example.activity_mainxml.data.AlarmRepository.loadAlarms
 import com.example.activity_mainxml.data.AlarmRepository.saveAlarms
+import com.example.activity_mainxml.data.HolidayRepository
 import com.example.activity_mainxml.model.CustomVoice
 import com.example.activity_mainxml.ui.main.AlarmApp
 import com.example.activity_mainxml.ui.theme.VoiceWakeTheme
@@ -43,6 +43,11 @@ class MainActivity : ComponentActivity() {
 
         // 권한 체크
         checkSystemPermissions()
+
+        // 💡 공휴일 데이터 업데이트
+        lifecycleScope.launch {
+            HolidayRepository.fetchAndSaveHolidays(this@MainActivity)
+        }
 
         // 💡 사용자 ID 부여 (식별용도로 유지)
         val userId = getOrCreateUserId()
@@ -193,9 +198,7 @@ class MainActivity : ComponentActivity() {
                     data = android.net.Uri.parse("package:$packageName")
                 }
                 startActivity(intent)
-            } catch (e: Exception) {
-                Log.e("ALARM_DEBUG", "Battery optimization request failed")
-            }
+            } catch (e: Exception) { }
         }
 
         // 2. 정확한 알람 권한

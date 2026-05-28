@@ -5,7 +5,6 @@ import android.content.Context
 import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Base64
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
@@ -80,16 +79,11 @@ fun AlarmEditScreen(
     alarm: AlarmItem?,
     customVoices: List<Triple<String, String, String>>,
     onDeleteVoice: (Triple<String, String, String>) -> Unit,
-    onSave: (Int, Int, String, Set<Int>, String, File?, String?, Boolean, Boolean, Int) -> Unit,
+    onSave: (Int, Int, String, Set<Int>, String, File?, String?, Boolean, Boolean, Int, Boolean) -> Unit,
     onCancel: () -> Unit
 ) {
     BackHandler { onCancel() }
     
-    // 💡 디버깅용 로그 추가
-    LaunchedEffect(alarm) {
-        Log.d("ALARM_DEBUG", "AlarmEditScreen recomposed with alarm: $alarm")
-    }
-
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -144,6 +138,7 @@ fun AlarmEditScreen(
 
     var isSoundEnabled by remember(alarm) { mutableStateOf(alarm?.isSoundEnabled ?: true) }
     var isVibrationEnabled by remember(alarm) { mutableStateOf(alarm?.isVibrationEnabled ?: true) }
+    var isExcludeHolidays by remember(alarm) { mutableStateOf(alarm?.isExcludeHolidays ?: false) } // 💡 상태 추가
     
     var fadeInDuration by remember(alarm) { mutableIntStateOf(alarm?.fadeInDurationSeconds ?: 0) }
 
@@ -210,7 +205,7 @@ fun AlarmEditScreen(
                         }
                     }
                 }
-            } catch (e: Exception) { Log.e("PLAY_PREVIEW", "${e.message}") }
+            } catch (e: Exception) { }
         }
     }
 
@@ -409,6 +404,15 @@ fun AlarmEditScreen(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Checkbox(checked = isExcludeHolidays, onCheckedChange = { isExcludeHolidays = it }, modifier = Modifier.scale(0.8f))
+                            Text("공휴일 제외", style = MaterialTheme.typography.labelMedium, fontSize = (13 * fontScale).sp)
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(20.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -423,7 +427,7 @@ fun AlarmEditScreen(
                                 if (amPmOffset == null) { Toast.makeText(context, "오전 또는 오후를 선택해주세요.", Toast.LENGTH_SHORT).show(); return@Button }
                                 isSaving = true
                                 val finalHour = if (hour == 12) amPmOffset!! else amPmOffset!! + hour
-                                onSave(finalHour, minute, message, selectedDays, selectedVoiceId!!, null, null, isSoundEnabled, isVibrationEnabled, fadeInDuration)
+                                onSave(finalHour, minute, message, selectedDays, selectedVoiceId!!, null, null, isSoundEnabled, isVibrationEnabled, fadeInDuration, isExcludeHolidays)
                             },
                             modifier = Modifier.weight(1f),
                             enabled = !isSaving,

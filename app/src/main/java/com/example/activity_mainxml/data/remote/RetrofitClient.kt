@@ -9,12 +9,21 @@ import java.util.concurrent.TimeUnit
 object RetrofitClient {
     private const val GOOGLE_BASE_URL = "https://texttospeech.googleapis.com/"
     private const val ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/"
+    private const val HOLIDAY_BASE_URL = "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/"
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    val holidayApi: HolidayApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl(HOLIDAY_BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(HolidayApiService::class.java)
+    }
 
     val googleTtsService: GoogleTtsService by lazy {
         Retrofit.Builder()

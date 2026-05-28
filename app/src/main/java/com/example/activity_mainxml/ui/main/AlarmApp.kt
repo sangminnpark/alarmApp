@@ -1,6 +1,5 @@
 package com.example.activity_mainxml.ui.main
 
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -56,7 +55,7 @@ fun AlarmApp(
     onThemeChange: (String) -> Unit
 ) {
     var showVoiceRegistration by remember { mutableStateOf(false) }
-    var showSettings by remember { mutableStateOf(false) } // 💡 설정 다이얼로그 상태
+    var showSettings by remember { mutableStateOf(false) }
     var isSimpleMode by remember { mutableStateOf(false) } 
     var selectedAlarmIds by remember { mutableStateOf(setOf<Int>()) } 
     var isMultiSelectActive by remember { mutableStateOf(false) }
@@ -198,7 +197,6 @@ fun AlarmApp(
                             Icon(Icons.Default.Close, contentDescription = "취소")
                         }
                     } else {
-                        // 💡 설정 톱니바퀴 버튼을 오른쪽 끝에 배치
                         IconButton(onClick = { showSettings = true }) {
                             Icon(
                                 imageVector = Icons.Default.Settings,
@@ -291,15 +289,13 @@ fun AlarmApp(
                 }
             }
         }
-
-        // 💡 설정 다이얼로그
+        
         if (showSettings) {
             AlertDialog(
                 onDismissRequest = { showSettings = false },
                 title = { Text("앱 설정", fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        // 1. 표시 모드 설정
                         Column {
                             Text("알람 리스트 표시", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -307,10 +303,7 @@ fun AlarmApp(
                                 Switch(checked = isSimpleMode, onCheckedChange = { isSimpleMode = it })
                             }
                         }
-                        
                         HorizontalDivider()
-
-                        // 2. 테마 설정
                         Column {
                             Text("테마 설정", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.height(8.dp))
@@ -353,7 +346,7 @@ fun AlarmApp(
                             onDeleteVoice(voiceTriple)
                         }
                     },
-                    onSave = { h, m, msg, days, vId, _, _, sound, vib, fadeIn ->
+                    onSave = { h, m, msg, days, vId, _, _, sound, vib, fadeIn, excludeHolidays ->
                         scope.launch {
                             try {
                                 val original = editingAlarm
@@ -402,7 +395,8 @@ fun AlarmApp(
                                         isEnabled = true,
                                         isSoundEnabled = sound,
                                         isVibrationEnabled = vib,
-                                        fadeInDurationSeconds = fadeIn
+                                        fadeInDurationSeconds = fadeIn,
+                                        isExcludeHolidays = excludeHolidays
                                     )
                                 } else {
                                     original!!.copy(
@@ -415,11 +409,10 @@ fun AlarmApp(
                                         localFilePath = localPath,
                                         isSoundEnabled = sound,
                                         isVibrationEnabled = vib,
-                                        fadeInDurationSeconds = fadeIn
+                                        fadeInDurationSeconds = fadeIn,
+                                        isExcludeHolidays = excludeHolidays
                                     )
                                 }
-
-                                Log.d("ALARM_DEBUG", "Saving alarm: $currentAlarm")
 
                                 val newList = alarmList.toMutableList()
                                 if (isAddingNew) {
@@ -432,14 +425,13 @@ fun AlarmApp(
                                 }
                                 
                                 alarmList = newList.sortByTime()
-                                Log.d("ALARM_DEBUG", "Updated alarmList size: ${alarmList.size}")
 
                                 if (currentAlarm.isEnabled) onSetAlarm(currentAlarm)
                                 
                                 Toast.makeText(context, "알람 설정이 저장되었습니다.", Toast.LENGTH_SHORT).show()
                                 isAddingNew = false
                                 editingAlarm = null
-                            } catch (e: Exception) { Log.e("ALARM_SAVE", "${e.message}") }
+                            } catch (e: Exception) { }
                         }
                     },
                     onCancel = { isAddingNew = false; editingAlarm = null }
