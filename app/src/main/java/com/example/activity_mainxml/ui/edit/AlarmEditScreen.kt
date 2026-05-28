@@ -72,6 +72,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Calendar
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -79,11 +80,16 @@ fun AlarmEditScreen(
     alarm: AlarmItem?,
     customVoices: List<Triple<String, String, String>>,
     onDeleteVoice: (Triple<String, String, String>) -> Unit,
-    onSave: (Int, Int, String, Set<Int>, String, File?, String?, Boolean, Boolean) -> Unit,
+    onSave: (Int, Int, String, Set<Int>, String, File?, String?, Boolean, Boolean, Int) -> Unit,
     onCancel: () -> Unit
 ) {
     BackHandler { onCancel() }
     
+    // 💡 디버깅용 로그 추가
+    LaunchedEffect(alarm) {
+        Log.d("ALARM_DEBUG", "AlarmEditScreen recomposed with alarm: $alarm")
+    }
+
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -111,26 +117,35 @@ fun AlarmEditScreen(
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isSaving by remember { mutableStateOf(false) }
 
-    var selectedVoiceId by remember { mutableStateOf<String?>(alarm?.voiceName) }
+    // 💡 모든 상태 변수에 remember(alarm) 키를 추가하여 알람 객체가 변경될 때마다 초기화되도록 보장
+    var selectedVoiceId by remember(alarm) { 
+        mutableStateOf<String?>(
+            if (!alarm?.voiceId.isNullOrEmpty()) alarm?.voiceId 
+            else if (!alarm?.voiceName.isNullOrEmpty()) alarm?.voiceName 
+            else null
+        ) 
+    }
     var expanded by remember { mutableStateOf(false) }
-    var amPmOffset by remember {
+    var amPmOffset by remember(alarm) {
         mutableStateOf<Int?>(alarm?.let { if (it.hour < 12) 0 else 12 }
             ?: if (currentHour24 < 12) 0 else 12)
     }
-    var hour by remember {
+    var hour by remember(alarm) {
         mutableIntStateOf(
             alarm?.let { if (it.hour % 12 == 0) 12 else it.hour % 12 }
                 ?: (if (currentHour24 % 12 == 0) 12 else currentHour24 % 12)
         )
     }
-    var minute by remember {
+    var minute by remember(alarm) {
         mutableIntStateOf(alarm?.minute ?: calendar.get(Calendar.MINUTE))
     }
-    var message by remember { mutableStateOf(alarm?.message ?: "") }
-    var selectedDays by remember { mutableStateOf(alarm?.repeatDays ?: (1..7).toSet()) }
+    var message by remember(alarm) { mutableStateOf(alarm?.message ?: "") }
+    var selectedDays by remember(alarm) { mutableStateOf(alarm?.repeatDays ?: (1..7).toSet()) }
 
-    var isSoundEnabled by remember { mutableStateOf(alarm?.isSoundEnabled ?: true) }
-    var isVibrationEnabled by remember { mutableStateOf(alarm?.isVibrationEnabled ?: true) }
+    var isSoundEnabled by remember(alarm) { mutableStateOf(alarm?.isSoundEnabled ?: true) }
+    var isVibrationEnabled by remember(alarm) { mutableStateOf(alarm?.isVibrationEnabled ?: true) }
+    
+    var fadeInDuration by remember(alarm) { mutableIntStateOf(alarm?.fadeInDurationSeconds ?: 0) }
 
     val API_KEY = BuildConfig.GOOGLE_API_KEY
 
@@ -219,7 +234,6 @@ fun AlarmEditScreen(
                 .background(Color.Black.copy(alpha = 0.5f))
                 .pointerInput(isKeyboardVisible) {
                     awaitEachGesture {
-                        // 💡 Initial Pass에서 모든 터치를 가로채 키보드를 숨김
                         awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
                         keyboardWasVisibleAtDown = isKeyboardVisible
                         if (isKeyboardVisible) hideIme()
@@ -357,6 +371,33 @@ fun AlarmEditScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    // 💡 볼륨 점진적 증가 (Fade-in) 설정 UI
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("점진적 볼륨 증가", style = MaterialTheme.typography.labelMedium, fontSize = (13 * fontScale).sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (fadeInDuration == 0) "사용 안 함" else "${fadeInDuration}초",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Slider(
+                            value = fadeInDuration.toFloat(),
+                            onValueChange = { fadeInDuration = it.roundToInt() },
+                            valueRange = 0f..60f,
+                            steps = 5, // 0, 10, 20, 30, 40, 50, 60
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                             Checkbox(checked = isSoundEnabled, onCheckedChange = { isSoundEnabled = it }, modifier = Modifier.scale(0.8f))
@@ -382,7 +423,7 @@ fun AlarmEditScreen(
                                 if (amPmOffset == null) { Toast.makeText(context, "오전 또는 오후를 선택해주세요.", Toast.LENGTH_SHORT).show(); return@Button }
                                 isSaving = true
                                 val finalHour = if (hour == 12) amPmOffset!! else amPmOffset!! + hour
-                                onSave(finalHour, minute, message, selectedDays, selectedVoiceId!!, null, null, isSoundEnabled, isVibrationEnabled)
+                                onSave(finalHour, minute, message, selectedDays, selectedVoiceId!!, null, null, isSoundEnabled, isVibrationEnabled, fadeInDuration)
                             },
                             modifier = Modifier.weight(1f),
                             enabled = !isSaving,
@@ -403,7 +444,9 @@ fun TimeInputUnit(value: Int, onValueChange: (Int) -> Unit, range: IntRange, lab
     val haptic = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
     var isTyping by remember { mutableStateOf(false) }
-    var textFieldValue by remember { mutableStateOf(String.format(Locale.US, "%02d", value)) }
+    var textFieldValue by remember(value) { mutableStateOf(String.format(Locale.US, "%02d", value)) }
+    
+    // value가 외부에서 변경될 때(예: 다른 알람 선택) 동기화
     LaunchedEffect(value) { if (!isTyping) textFieldValue = String.format(Locale.US, "%02d", value) }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -427,4 +470,11 @@ fun TimeInputUnit(value: Int, onValueChange: (Int) -> Unit, range: IntRange, lab
         IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); isTyping = false; val prev = if (value > range.first) value - 1 else range.last; onValueChange(prev); focusManager.clearFocus() }) { Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size((28 * fontScale).dp)) }
         Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontSize = (12 * fontScale).sp)
     }
+}
+
+fun copyUriToTempFile(context: Context, uri: Uri): File {
+    val inputStream = context.contentResolver.openInputStream(uri)
+    val tempFile = File(context.cacheDir, "temp_audio_${System.currentTimeMillis()}.wav")
+    inputStream?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+    return tempFile
 }

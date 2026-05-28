@@ -3,7 +3,6 @@ package com.example.activity_mainxml.ui.main
 import com.example.activity_mainxml.model.AlarmItem
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -27,17 +26,16 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
 fun AlarmRow(
     alarm: AlarmItem,
     isSimpleMode: Boolean = false,
-    isSelected: Boolean = false, // 💡 선택 상태
-    isSelectionMode: Boolean = false, // 💡 선택 모드 활성화 여부
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false,
     onToggle: (Boolean) -> Unit,
     onClick: () -> Unit,
-    onLongClick: () -> Unit, // 💡 롱클릭 핸들러 추가
+    onLongClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
@@ -47,18 +45,18 @@ fun AlarmRow(
     val displayHour = remember(alarm.hour) { if (alarm.hour % 12 == 0) 12 else alarm.hour % 12 }
     val displayMinute = remember(alarm.minute) { String.format("%02d", alarm.minute) }
 
-    // 파스텔 톤 색상
-    val activeColor = Color(0xFFE3F2FD) 
-    val inactiveColor = Color(0xFFF5F5F5)
-    val selectedColor = MaterialTheme.colorScheme.primaryContainer // 💡 선택 시 색상
+    // 💡 테마 색상 적용
+    val activeColor = MaterialTheme.colorScheme.primaryContainer
+    val inactiveColor = MaterialTheme.colorScheme.surfaceVariant
+    val selectedColor = MaterialTheme.colorScheme.secondaryContainer
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize()
-            .heightIn(min = if (isSimpleMode) 90.dp else 160.dp) // 💡 지표 추가를 위해 높이 약간 조정
+            .heightIn(min = if (isSimpleMode) 90.dp else 160.dp) 
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .pointerInput(isSelectionMode) {
+            .pointerInput(isSelectionMode, alarm) {
                 detectTapGestures(
                     onTap = { onClick() },
                     onLongPress = { 
@@ -83,7 +81,6 @@ fun AlarmRow(
                 .wrapContentHeight(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 💡 선택 모드일 때 체크박스 표시
             if (isSelectionMode) {
                 Checkbox(
                     checked = isSelected,
@@ -92,7 +89,6 @@ fun AlarmRow(
                 )
             }
 
-            // 💡 왼쪽 영역: 정보 및 제어
             Column(
                 modifier = Modifier.weight(1.1f),
                 verticalArrangement = Arrangement.Center
@@ -107,7 +103,7 @@ fun AlarmRow(
                             text = "$amPm $displayHour:$displayMinute",
                             style = if (isSimpleMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = if (alarm.isEnabled) Color.Unspecified else Color.Gray
+                            color = if (alarm.isEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
 
                         val daysText = remember(alarm.repeatDays) {
@@ -122,7 +118,7 @@ fun AlarmRow(
                         Text(
                             text = daysText,
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.Gray
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
@@ -138,14 +134,13 @@ fun AlarmRow(
                     }
                 }
 
-                // 💡 간단 모드에서도 지표 표시
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.padding(top = 4.dp)
                 ) {
                     if (!alarm.isSoundEnabled && !alarm.isVibrationEnabled) {
-                        ModeIndicator(icon = Icons.AutoMirrored.Filled.VolumeOff, text = "무음", isEnabled = alarm.isEnabled, color = Color.Gray)
+                        ModeIndicator(icon = Icons.AutoMirrored.Filled.VolumeOff, text = "무음", isEnabled = alarm.isEnabled, color = MaterialTheme.colorScheme.error)
                     } else {
                         if (alarm.isSoundEnabled) ModeIndicator(icon = Icons.AutoMirrored.Filled.VolumeUp, text = "사운드", isEnabled = alarm.isEnabled, color = Color(0xFF4CAF50))
                         if (alarm.isVibrationEnabled) ModeIndicator(icon = Icons.Default.Vibration, text = "진동", isEnabled = alarm.isEnabled, color = Color(0xFF2196F3))
@@ -153,7 +148,6 @@ fun AlarmRow(
                 }
 
                 if (!isSimpleMode) {
-                    // 💡 상세 모드에서만 보이는 버튼 영역
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.height(36.dp)
@@ -178,7 +172,7 @@ fun AlarmRow(
                                 Icon(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = "삭제",
-                                    tint = Color.Gray.copy(alpha = 0.6f),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -190,19 +184,18 @@ fun AlarmRow(
             if (!isSimpleMode) {
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // 💡 오른쪽 영역 (상세 모드 전용): 메시지 텍스트
                 Box(
                     modifier = Modifier
                         .weight(0.9f)
-                        .height(110.dp)
+                        .height(110.dp) 
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.3f))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
                         .padding(8.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
                         text = alarm.message.ifBlank { "보이스 시간 알림" },
-                        color = if (alarm.isEnabled) MaterialTheme.colorScheme.primary else Color.Gray,
+                        color = if (alarm.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                         minLines = 3
                     )
@@ -227,12 +220,12 @@ fun ModeIndicator(
             imageVector = icon,
             contentDescription = null,
             modifier = Modifier.size(14.dp),
-            tint = if (isEnabled) color else Color.LightGray
+            tint = if (isEnabled) color else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
         )
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
-            color = if (isEnabled) color else Color.LightGray
+            color = if (isEnabled) color else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
         )
     }
 }

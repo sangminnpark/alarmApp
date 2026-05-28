@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewHeadline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +31,7 @@ import com.example.activity_mainxml.data.VoiceRepository
 import com.example.activity_mainxml.model.AlarmItem
 import com.example.activity_mainxml.ui.edit.AlarmEditScreen
 import com.example.activity_mainxml.ui.edit.VoiceRegistrationDialog
+import com.example.activity_mainxml.ui.theme.VoiceWakeTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,15 +51,17 @@ fun AlarmApp(
     onCancelAlarm: (AlarmItem) -> Unit,
     onDeleteAlarm: (AlarmItem) -> Unit,
     onDeleteVoice: (Triple<String, String, String>) -> Unit,
-    onSaveToDisk: (List<AlarmItem>) -> Unit
+    onSaveToDisk: (List<AlarmItem>) -> Unit,
+    currentThemeMode: String,
+    onThemeChange: (String) -> Unit
 ) {
     var showVoiceRegistration by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) } // 💡 설정 다이얼로그 상태
     var isSimpleMode by remember { mutableStateOf(false) } 
     var selectedAlarmIds by remember { mutableStateOf(setOf<Int>()) } 
-    var isMultiSelectActive by remember { mutableStateOf(false) } // 💡 선택 모드 활성화 상태 독립 관리
+    var isMultiSelectActive by remember { mutableStateOf(false) }
     val isSelectionMode = isMultiSelectActive
 
-    // 💡 선택 모드일 때 뒤로가기 버튼 처리: 모드 종료
     BackHandler(enabled = isSelectionMode) {
         isMultiSelectActive = false
         selectedAlarmIds = emptySet()
@@ -72,7 +76,7 @@ fun AlarmApp(
     var editingAlarm by remember { mutableStateOf<AlarmItem?>(null) }
     var isAddingNew by remember { mutableStateOf(false) }
     var pendingDeleteAlarm by remember { mutableStateOf<AlarmItem?>(null) }
-    var showMultiDeleteConfirmation by remember { mutableStateOf(false) } // 💡 다중 삭제 확인 팝업 상태
+    var showMultiDeleteConfirmation by remember { mutableStateOf(false) }
 
     val pureVoiceIdExtractor = remember {
         { rawId: String ->
@@ -99,7 +103,7 @@ fun AlarmApp(
                             pendingDeleteAlarm = null
                         }
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) { Text("삭제") }
             },
             dismissButton = { TextButton(onClick = { pendingDeleteAlarm = null }) { Text("취소") } }
@@ -119,12 +123,12 @@ fun AlarmApp(
                             toDelete.forEach { onDeleteAlarm(it) }
                             alarmList = alarmList.filter { it.id !in selectedAlarmIds }
                             selectedAlarmIds = emptySet()
-                            isMultiSelectActive = false // 💡 삭제 후 모드 종료
+                            isMultiSelectActive = false
                             Toast.makeText(context, "${toDelete.size}개의 알람이 삭제되었습니다.", Toast.LENGTH_SHORT).show()
                             showMultiDeleteConfirmation = false
                         }
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) { Text("삭제") }
             },
             dismissButton = { TextButton(onClick = { showMultiDeleteConfirmation = false }) { Text("취소") } }
@@ -134,7 +138,7 @@ fun AlarmApp(
     LaunchedEffect(alarmList) { onSaveToDisk(alarmList) }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars), // 💡 상하단 바 겹침 방지
+        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars),
         topBar = { 
             CenterAlignedTopAppBar(
                 title = { 
@@ -159,7 +163,6 @@ fun AlarmApp(
                 },
                 actions = {
                     if (isSelectionMode) {
-                        // 💡 전체 선택 체크박스 + 텍스트
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -185,7 +188,7 @@ fun AlarmApp(
                         }
                         
                         IconButton(onClick = { showMultiDeleteConfirmation = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "다중 삭제", tint = Color.Red)
+                            Icon(Icons.Default.Delete, contentDescription = "다중 삭제", tint = MaterialTheme.colorScheme.error)
                         }
                         
                         IconButton(onClick = { 
@@ -195,13 +198,12 @@ fun AlarmApp(
                             Icon(Icons.Default.Close, contentDescription = "취소")
                         }
                     } else {
-                        // 💡 직관적인 텍스트 기반 모드 전환 버튼
-                        TextButton(onClick = { isSimpleMode = !isSimpleMode }) {
-                            Text(
-                                text = if (isSimpleMode) "상세 보기" else "간단 보기",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                        // 💡 설정 톱니바퀴 버튼을 오른쪽 끝에 배치
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "설정",
+                                tint = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
@@ -230,7 +232,6 @@ fun AlarmApp(
             }
         }
     ) { padding ->
-        // 💡 선택 모드 중에 리스트 외 화면(배경) 터치 시 모드 해제
         Box(
             modifier = Modifier
                 .padding(padding)
@@ -247,7 +248,7 @@ fun AlarmApp(
         ) {
             if (alarmList.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(text = "설정된 알람이 없습니다.", color = Color.Gray)
+                    Text(text = "설정된 알람이 없습니다.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -280,7 +281,7 @@ fun AlarmApp(
                             },
                             onLongClick = {
                                 if (!isSelectionMode) {
-                                    isMultiSelectActive = true // 💡 롱클릭 시 모드 활성화
+                                    isMultiSelectActive = true
                                     selectedAlarmIds = setOf(alarm.id)
                                 }
                             },
@@ -290,8 +291,47 @@ fun AlarmApp(
                 }
             }
         }
+
+        // 💡 설정 다이얼로그
+        if (showSettings) {
+            AlertDialog(
+                onDismissRequest = { showSettings = false },
+                title = { Text("앱 설정", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        // 1. 표시 모드 설정
+                        Column {
+                            Text("알람 리스트 표시", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("간단하게 보기", modifier = Modifier.weight(1f))
+                                Switch(checked = isSimpleMode, onCheckedChange = { isSimpleMode = it })
+                            }
+                        }
+                        
+                        HorizontalDivider()
+
+                        // 2. 테마 설정
+                        Column {
+                            Text("테마 설정", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            listOf("system" to "시스템 설정", "light" to "라이트 모드", "dark" to "다크 모드").forEach { (mode, label) ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth().clickable { onThemeChange(mode) }
+                                ) {
+                                    RadioButton(selected = currentThemeMode == mode, onClick = { onThemeChange(mode) })
+                                    Text(label)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSettings = false }) { Text("확인") }
+                }
+            )
+        }
         
-        // 💡 다이얼로그 오버레이 섹션
         if (showVoiceRegistration) {
             VoiceRegistrationDialog(
                 onDismiss = { showVoiceRegistration = false },
@@ -303,54 +343,108 @@ fun AlarmApp(
         }
 
         if (isAddingNew || editingAlarm != null) {
-            AlarmEditScreen(
-                alarm = editingAlarm,
-                customVoices = customVoices,
-                onDeleteVoice = { voiceTriple ->
-                    scope.launch {
-                        VoiceRepository.deleteElevenLabsVoice(voiceTriple.second)
-                        onDeleteVoice(voiceTriple)
-                    }
-                },
-                onSave = { h, m, msg, days, vId, _, _, sound, vib ->
-                    scope.launch {
-                        try {
-                            var localPath: String? = null
-                            var finalVoiceId = vId
-                            if (!vId.startsWith("ko-KR-")) {
-                                val amPm = if (h < 12) "오전" else "오후"
-                                val displayHour = if (h % 12 == 0) 12 else h % 12
-                                val fullText = "현재 시간은 ${amPm} ${displayHour}시 ${m}분입니다. $msg"
-                                
-                                val audioFile = try {
-                                    withContext(Dispatchers.IO) {
-                                        VoiceRepository.makeElevenLabsVoiceFile(vId, fullText, context)
-                                    }
-                                } catch (e: Exception) { null }
+            key(editingAlarm?.id ?: "new") {
+                AlarmEditScreen(
+                    alarm = editingAlarm,
+                    customVoices = customVoices,
+                    onDeleteVoice = { voiceTriple ->
+                        scope.launch {
+                            VoiceRepository.deleteElevenLabsVoice(voiceTriple.second)
+                            onDeleteVoice(voiceTriple)
+                        }
+                    },
+                    onSave = { h, m, msg, days, vId, _, _, sound, vib, fadeIn ->
+                        scope.launch {
+                            try {
+                                val original = editingAlarm
+                                var localPath: String? = original?.localFilePath
+                                var finalVoiceId = vId
 
-                                if (audioFile != null && audioFile.exists()) {
-                                    localPath = audioFile.absolutePath
-                                    finalVoiceId = pureVoiceIdExtractor(audioFile.name)
-                                } else {
-                                    finalVoiceId = "ko-KR-Standard-A"
+                                val needsRegeneration = isAddingNew || 
+                                    original == null ||
+                                    original.hour != h || 
+                                    original.minute != m || 
+                                    original.message != msg || 
+                                    original.voiceId != vId
+
+                                if (needsRegeneration && !vId.startsWith("ko-KR-")) {
+                                    val amPm = if (h < 12) "오전" else "오후"
+                                    val displayHour = if (h % 12 == 0) 12 else h % 12
+                                    val fullText = "현재 시간은 ${amPm} ${displayHour}시 ${m}분입니다. $msg"
+                                    
+                                    val audioFile = try {
+                                        withContext(Dispatchers.IO) {
+                                            VoiceRepository.makeElevenLabsVoiceFile(vId, fullText, context)
+                                        }
+                                    } catch (e: Exception) { null }
+
+                                    if (audioFile != null && audioFile.exists()) {
+                                        localPath = audioFile.absolutePath
+                                        finalVoiceId = pureVoiceIdExtractor(audioFile.name)
+                                    } else if (isAddingNew) {
+                                        finalVoiceId = "ko-KR-Standard-A"
+                                        localPath = null
+                                    } else {
+                                        finalVoiceId = original?.voiceId ?: "ko-KR-Standard-A"
+                                        localPath = original?.localFilePath
+                                    }
                                 }
-                            }
-                            val currentAlarm = if (isAddingNew) {
-                                AlarmItem(hour = h, minute = m, message = msg, repeatDays = days, voiceId = finalVoiceId, voiceName = finalVoiceId, localFilePath = localPath, isEnabled = true, isSoundEnabled = sound, isVibrationEnabled = vib)
-                            } else {
-                                val original = editingAlarm!!
-                                if (original.isEnabled) onCancelAlarm(original)
-                                original.copy(hour = h, minute = m, message = msg, repeatDays = days, voiceId = finalVoiceId, voiceName = finalVoiceId, localFilePath = localPath, isEnabled = original.isEnabled, isSoundEnabled = sound, isVibrationEnabled = vib)
-                            }
-                            alarmList = (if (isAddingNew) alarmList + currentAlarm else alarmList.map { if (it.id == currentAlarm.id) currentAlarm else it }).sortByTime()
-                            if (currentAlarm.isEnabled) onSetAlarm(currentAlarm)
-                            isAddingNew = false
-                            editingAlarm = null
-                        } catch (e: Exception) { Log.e("ALARM_SAVE", "${e.message}") }
-                    }
-                },
-                onCancel = { isAddingNew = false; editingAlarm = null }
-            )
+                                
+                                val currentAlarm = if (isAddingNew) {
+                                    AlarmItem(
+                                        hour = h,
+                                        minute = m,
+                                        message = msg,
+                                        repeatDays = days,
+                                        voiceId = finalVoiceId,
+                                        voiceName = finalVoiceId,
+                                        localFilePath = localPath,
+                                        isEnabled = true,
+                                        isSoundEnabled = sound,
+                                        isVibrationEnabled = vib,
+                                        fadeInDurationSeconds = fadeIn
+                                    )
+                                } else {
+                                    original!!.copy(
+                                        hour = h,
+                                        minute = m,
+                                        message = msg,
+                                        repeatDays = days,
+                                        voiceId = finalVoiceId,
+                                        voiceName = finalVoiceId,
+                                        localFilePath = localPath,
+                                        isSoundEnabled = sound,
+                                        isVibrationEnabled = vib,
+                                        fadeInDurationSeconds = fadeIn
+                                    )
+                                }
+
+                                Log.d("ALARM_DEBUG", "Saving alarm: $currentAlarm")
+
+                                val newList = alarmList.toMutableList()
+                                if (isAddingNew) {
+                                    newList.add(currentAlarm)
+                                } else {
+                                    val index = newList.indexOfFirst { it.id == currentAlarm.id }
+                                    if (index != -1) {
+                                        newList[index] = currentAlarm
+                                    }
+                                }
+                                
+                                alarmList = newList.sortByTime()
+                                Log.d("ALARM_DEBUG", "Updated alarmList size: ${alarmList.size}")
+
+                                if (currentAlarm.isEnabled) onSetAlarm(currentAlarm)
+                                
+                                Toast.makeText(context, "알람 설정이 저장되었습니다.", Toast.LENGTH_SHORT).show()
+                                isAddingNew = false
+                                editingAlarm = null
+                            } catch (e: Exception) { Log.e("ALARM_SAVE", "${e.message}") }
+                        }
+                    },
+                    onCancel = { isAddingNew = false; editingAlarm = null }
+                )
+            }
         }
     }
 }

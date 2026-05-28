@@ -24,6 +24,7 @@ import com.example.activity_mainxml.data.AlarmRepository.loadAlarms
 import com.example.activity_mainxml.data.AlarmRepository.saveAlarms
 import com.example.activity_mainxml.model.CustomVoice
 import com.example.activity_mainxml.ui.main.AlarmApp
+import com.example.activity_mainxml.ui.theme.VoiceWakeTheme
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -49,74 +50,86 @@ class MainActivity : ComponentActivity() {
         val initialAlarms = loadAlarms(this)
 
         setContent {
-            // 💡 [변경] CustomVoice 객체 리스트를 사용합니다.
-            var customVoices by remember {
-                mutableStateOf<List<CustomVoice>>(loadCustomVoicesFromPrefs())
+            val prefs = remember { getSharedPreferences("app_settings", MODE_PRIVATE) }
+            var themeMode by remember { 
+                mutableStateOf(prefs.getString("theme_mode", "system") ?: "system") 
             }
+            
+            VoiceWakeTheme(themeMode = themeMode) {
+                // 💡 [변경] CustomVoice 객체 리스트를 사용합니다.
+                var customVoices by remember {
+                    mutableStateOf<List<CustomVoice>>(loadCustomVoicesFromPrefs())
+                }
 
-            AlarmApp(
-                initialAlarms = initialAlarms,
-                customVoices = customVoices.map { Triple(it.name, it.voiceId, it.previewPath) }, 
-                onSetAlarm = { alarm -> AlarmScheduler.schedule(this, alarm) },
+                AlarmApp(
+                    initialAlarms = initialAlarms,
+                    customVoices = customVoices.map { Triple(it.name, it.voiceId, it.previewPath) }, 
+                    onSetAlarm = { alarm -> AlarmScheduler.schedule(this, alarm) },
+                    currentThemeMode = themeMode,
+                    onThemeChange = { newMode ->
+                        themeMode = newMode
+                        prefs.edit().putString("theme_mode", newMode).apply()
+                    },
 
-                onDeleteVoice = { voiceTriple ->
-                    val previewFile = File(voiceTriple.third)
-                    if (previewFile.exists()) previewFile.delete()
+                    onDeleteVoice = { voiceTriple ->
+                        val previewFile = File(voiceTriple.third)
+                        if (previewFile.exists()) previewFile.delete()
 
-                    val updatedList = customVoices.filter { it.voiceId != voiceTriple.second }
-                    customVoices = updatedList
-                    saveCustomVoicesToPrefs(updatedList)
+                        val updatedList = customVoices.filter { it.voiceId != voiceTriple.second }
+                        customVoices = updatedList
+                        saveCustomVoicesToPrefs(updatedList)
 
-                    Toast.makeText(this@MainActivity, "'${voiceTriple.first}' 삭제 완료", Toast.LENGTH_SHORT).show()
-                },
-                onGenerateVoice = { file, _, customName, onComplete ->
-                    lifecycleScope.launch {
-                        try {
-                            val result = withContext(Dispatchers.IO) {
-                                AlarmScheduler.requestElevenLabsVoice(
-                                    context = this@MainActivity,
-                                    recordFile = file,
-                                    voiceName = customName.ifBlank { "내 목소리 ${customVoices.size + 1}" }
-                                )
+                        Toast.makeText(this@MainActivity, "'${voiceTriple.first}' 삭제 완료", Toast.LENGTH_SHORT).show()
+                    },
+                    onGenerateVoice = { file, _, customName, onComplete ->
+                        lifecycleScope.launch {
+                            try {
+                                val result = withContext(Dispatchers.IO) {
+                                    AlarmScheduler.requestElevenLabsVoice(
+                                        context = this@MainActivity,
+                                        recordFile = file,
+                                        voiceName = customName.ifBlank { "내 목소리 ${customVoices.size + 1}" }
+                                    )
+                                }
+
+                                if (result != null) {
+                                    val (voiceId, previewFile) = result
+                                    val newVoice = CustomVoice(
+                                        name = if (customName.isNotBlank()) customName else "내 목소리 ${customVoices.size + 1}",
+                                        voiceId = voiceId,
+                                        previewPath = previewFile.absolutePath,
+                                        userId = userId
+                                    )
+
+                                    val updatedList = customVoices + newVoice
+                                    saveCustomVoicesToPrefs(updatedList)
+                                    customVoices = updatedList
+
+                                    onComplete(voiceId)
+                                    Toast.makeText(this@MainActivity, "'${newVoice.name}' 생성 완료!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(this@MainActivity, "보이스 생성 실패", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(this@MainActivity, "연결 실패: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
-
-                            if (result != null) {
-                                val (voiceId, previewFile) = result
-                                val newVoice = CustomVoice(
-                                    name = if (customName.isNotBlank()) customName else "내 목소리 ${customVoices.size + 1}",
-                                    voiceId = voiceId,
-                                    previewPath = previewFile.absolutePath,
-                                    userId = userId
-                                )
-
-                                val updatedList = customVoices + newVoice
-                                saveCustomVoicesToPrefs(updatedList)
-                                customVoices = updatedList
-
-                                onComplete(voiceId)
-                                Toast.makeText(this@MainActivity, "'${newVoice.name}' 생성 완료!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(this@MainActivity, "보이스 생성 실패", Toast.LENGTH_SHORT).show()
-                            }
-                        } catch (e: Exception) {
-                            Toast.makeText(this@MainActivity, "연결 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onCancelAlarm = { alarm -> AlarmScheduler.cancel(this, alarm) },
+                    onDeleteAlarm = { alarm ->
+                        AlarmScheduler.cancel(this, alarm)
+                        alarm.localFilePath?.let { path ->
+                            val file = File(path)
+                            if (file.exists()) file.delete()
+                        }
+                    },
+                    onSaveToDisk = { list ->
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            saveAlarms(this@MainActivity, list.map { it.copy(userId = userId) })
                         }
                     }
-                },
-                onCancelAlarm = { alarm -> AlarmScheduler.cancel(this, alarm) },
-                onDeleteAlarm = { alarm ->
-                    AlarmScheduler.cancel(this, alarm)
-                    alarm.localFilePath?.let { path ->
-                        val file = File(path)
-                        if (file.exists()) file.delete()
-                    }
-                },
-                onSaveToDisk = { list ->
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        saveAlarms(this@MainActivity, list.map { it.copy(userId = userId) })
-                    }
-                }
-            )
+                )
+            }
         }
     }
 
