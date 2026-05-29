@@ -59,6 +59,12 @@ class MainActivity : ComponentActivity() {
             var themeMode by remember { 
                 mutableStateOf(prefs.getString("theme_mode", "system") ?: "system") 
             }
+            var listMode by remember {
+                mutableStateOf(prefs.getString("list_mode", "detailed") ?: "detailed")
+            }
+            var uiScale by remember {
+                mutableStateOf(prefs.getString("ui_scale", "normal") ?: "normal")
+            }
             
             VoiceWakeTheme(themeMode = themeMode) {
                 // 💡 [변경] CustomVoice 객체 리스트를 사용합니다.
@@ -74,6 +80,16 @@ class MainActivity : ComponentActivity() {
                     onThemeChange = { newMode ->
                         themeMode = newMode
                         prefs.edit().putString("theme_mode", newMode).apply()
+                    },
+                    currentListMode = listMode,
+                    onListModeChange = { newMode ->
+                        listMode = newMode
+                        prefs.edit().putString("list_mode", newMode).apply()
+                    },
+                    currentUiScale = uiScale,
+                    onUiScaleChange = { newScale ->
+                        uiScale = newScale
+                        prefs.edit().putString("ui_scale", newScale).apply()
                     },
 
                     onDeleteVoice = { voiceTriple ->

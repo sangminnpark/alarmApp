@@ -394,11 +394,27 @@ fun AlarmEditScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically, 
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { isSoundEnabled = !isSoundEnabled }
+                        ) {
                             Checkbox(checked = isSoundEnabled, onCheckedChange = { isSoundEnabled = it }, modifier = Modifier.scale(0.8f))
                             Text("사운드", style = MaterialTheme.typography.labelMedium, fontSize = (13 * fontScale).sp)
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically, 
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { isVibrationEnabled = !isVibrationEnabled }
+                        ) {
                             Checkbox(checked = isVibrationEnabled, onCheckedChange = { isVibrationEnabled = it }, modifier = Modifier.scale(0.8f))
                             Text("진동", style = MaterialTheme.typography.labelMedium, fontSize = (13 * fontScale).sp)
                         }
@@ -407,7 +423,15 @@ fun AlarmEditScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically, 
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { isExcludeHolidays = !isExcludeHolidays }
+                        ) {
                             Checkbox(checked = isExcludeHolidays, onCheckedChange = { isExcludeHolidays = it }, modifier = Modifier.scale(0.8f))
                             Text("공휴일 제외", style = MaterialTheme.typography.labelMedium, fontSize = (13 * fontScale).sp)
                         }

@@ -26,11 +26,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun AlarmRow(
     alarm: AlarmItem,
     isSimpleMode: Boolean = false,
+    uiScale: String = "normal", // 💡 UI 크기 파라미터
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
     onToggle: (Boolean) -> Unit,
@@ -41,11 +43,17 @@ fun AlarmRow(
     val haptic = LocalHapticFeedback.current
     val dayLabels = listOf("월", "화", "수", "목", "금", "토", "일")
 
+    // 💡 크기 배율 계산
+    val scaleFactor = when (uiScale) {
+        "small" -> 0.85f
+        "large" -> 1.2f
+        else -> 1.0f
+    }
+
     val amPm = remember(alarm.hour) { if (alarm.hour < 12) "오전" else "오후" }
     val displayHour = remember(alarm.hour) { if (alarm.hour % 12 == 0) 12 else alarm.hour % 12 }
     val displayMinute = remember(alarm.minute) { String.format("%02d", alarm.minute) }
 
-    // 💡 테마 색상 적용
     val activeColor = MaterialTheme.colorScheme.primaryContainer
     val inactiveColor = MaterialTheme.colorScheme.surfaceVariant
     val selectedColor = MaterialTheme.colorScheme.secondaryContainer
@@ -54,7 +62,7 @@ fun AlarmRow(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize()
-            .heightIn(min = if (isSimpleMode) 90.dp else 160.dp) 
+            .heightIn(min = (if (isSimpleMode) 90.dp else 160.dp) * scaleFactor)
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .pointerInput(isSelectionMode, alarm) {
                 detectTapGestures(
@@ -76,7 +84,7 @@ fun AlarmRow(
     ) {
         Row(
             modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = if (isSimpleMode) 10.dp else 12.dp)
+                .padding(horizontal = 16.dp, vertical = (if (isSimpleMode) 10.dp else 12.dp) * scaleFactor)
                 .fillMaxWidth()
                 .wrapContentHeight(),
             verticalAlignment = Alignment.CenterVertically
@@ -85,7 +93,7 @@ fun AlarmRow(
                 Checkbox(
                     checked = isSelected,
                     onCheckedChange = { onClick() },
-                    modifier = Modifier.padding(end = 8.dp)
+                    modifier = Modifier.padding(end = 8.dp).scale(scaleFactor)
                 )
             }
 
@@ -101,7 +109,9 @@ fun AlarmRow(
                     Column {
                         Text(
                             text = "$amPm $displayHour:$displayMinute",
-                            style = if (isSimpleMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                            style = (if (isSimpleMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge).copy(
+                                fontSize = (if (isSimpleMode) 18.sp else 22.sp) * scaleFactor
+                            ),
                             fontWeight = FontWeight.Bold,
                             color = if (alarm.isEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
@@ -117,7 +127,9 @@ fun AlarmRow(
                         }
                         Text(
                             text = daysText,
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 11.sp * scaleFactor
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -129,7 +141,7 @@ fun AlarmRow(
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onToggle(it) 
                             },
-                            modifier = Modifier.scale(0.6f)
+                            modifier = Modifier.scale(0.6f * scaleFactor)
                         )
                     }
                 }
@@ -140,17 +152,17 @@ fun AlarmRow(
                     modifier = Modifier.padding(top = 4.dp)
                 ) {
                     if (!alarm.isSoundEnabled && !alarm.isVibrationEnabled) {
-                        ModeIndicator(icon = Icons.AutoMirrored.Filled.VolumeOff, text = "무음", isEnabled = alarm.isEnabled, color = MaterialTheme.colorScheme.error)
+                        ModeIndicator(icon = Icons.AutoMirrored.Filled.VolumeOff, text = "무음", isEnabled = alarm.isEnabled, color = MaterialTheme.colorScheme.error, scaleFactor = scaleFactor)
                     } else {
-                        if (alarm.isSoundEnabled) ModeIndicator(icon = Icons.AutoMirrored.Filled.VolumeUp, text = "사운드", isEnabled = alarm.isEnabled, color = Color(0xFF4CAF50))
-                        if (alarm.isVibrationEnabled) ModeIndicator(icon = Icons.Default.Vibration, text = "진동", isEnabled = alarm.isEnabled, color = Color(0xFF2196F3))
+                        if (alarm.isSoundEnabled) ModeIndicator(icon = Icons.AutoMirrored.Filled.VolumeUp, text = "사운드", isEnabled = alarm.isEnabled, color = Color(0xFF4CAF50), scaleFactor = scaleFactor)
+                        if (alarm.isVibrationEnabled) ModeIndicator(icon = Icons.Default.Vibration, text = "진동", isEnabled = alarm.isEnabled, color = Color(0xFF2196F3), scaleFactor = scaleFactor)
                     }
                 }
 
                 if (!isSimpleMode) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.height(36.dp)
+                        modifier = Modifier.height(36.dp * scaleFactor)
                     ) {
                         if (!isSelectionMode) {
                             Switch(
@@ -159,7 +171,7 @@ fun AlarmRow(
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onToggle(it) 
                                 },
-                                modifier = Modifier.scale(0.7f)
+                                modifier = Modifier.scale(0.7f * scaleFactor)
                             )
 
                             IconButton(
@@ -167,13 +179,13 @@ fun AlarmRow(
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     onDelete()
                                 },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(28.dp * scaleFactor)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = "삭제",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(16.dp * scaleFactor)
                                 )
                             }
                         }
@@ -187,7 +199,7 @@ fun AlarmRow(
                 Box(
                     modifier = Modifier
                         .weight(0.9f)
-                        .height(110.dp) 
+                        .height(110.dp * scaleFactor)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
                         .padding(8.dp)
@@ -196,7 +208,9 @@ fun AlarmRow(
                     Text(
                         text = alarm.message.ifBlank { "보이스 시간 알림" },
                         color = if (alarm.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp * scaleFactor
+                        ),
                         minLines = 3
                     )
                 }
@@ -210,7 +224,8 @@ fun ModeIndicator(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     text: String,
     isEnabled: Boolean,
-    color: Color
+    color: Color,
+    scaleFactor: Float = 1.0f
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -219,12 +234,14 @@ fun ModeIndicator(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(14.dp),
+            modifier = Modifier.size(14.dp * scaleFactor),
             tint = if (isEnabled) color else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
         )
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp * scaleFactor
+            ),
             color = if (isEnabled) color else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
         )
     }

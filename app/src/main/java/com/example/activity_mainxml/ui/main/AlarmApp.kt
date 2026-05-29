@@ -8,13 +8,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ViewHeadline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.activity_mainxml.R
 import com.example.activity_mainxml.data.VoiceRepository
 import com.example.activity_mainxml.model.AlarmItem
@@ -52,11 +51,15 @@ fun AlarmApp(
     onDeleteVoice: (Triple<String, String, String>) -> Unit,
     onSaveToDisk: (List<AlarmItem>) -> Unit,
     currentThemeMode: String,
-    onThemeChange: (String) -> Unit
+    onThemeChange: (String) -> Unit,
+    currentListMode: String,
+    onListModeChange: (String) -> Unit,
+    currentUiScale: String,
+    onUiScaleChange: (String) -> Unit
 ) {
     var showVoiceRegistration by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
-    var isSimpleMode by remember { mutableStateOf(false) } 
+    val isSimpleMode = currentListMode == "simple"
     var selectedAlarmIds by remember { mutableStateOf(setOf<Int>()) } 
     var isMultiSelectActive by remember { mutableStateOf(false) }
     val isSelectionMode = isMultiSelectActive
@@ -254,6 +257,7 @@ fun AlarmApp(
                         AlarmRow(
                             alarm = alarm,
                             isSimpleMode = isSimpleMode,
+                            uiScale = currentUiScale,
                             isSelected = selectedAlarmIds.contains(alarm.id),
                             isSelectionMode = isSelectionMode,
                             onToggle = { isChecked ->
@@ -296,14 +300,41 @@ fun AlarmApp(
                 title = { Text("앱 설정", fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        // 1. 표시 모드 설정
                         Column {
                             Text("알람 리스트 표시", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("간단하게 보기", modifier = Modifier.weight(1f))
-                                Switch(checked = isSimpleMode, onCheckedChange = { isSimpleMode = it })
+                            Spacer(modifier = Modifier.height(8.dp))
+                            listOf("detailed" to "자세히 보기", "simple" to "간단히 보기").forEach { (mode, label) ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth().clickable { onListModeChange(mode) }
+                                ) {
+                                    RadioButton(selected = currentListMode == mode, onClick = { onListModeChange(mode) })
+                                    Text(label)
+                                }
                             }
                         }
+                        
                         HorizontalDivider()
+
+                        // 2. 크기 설정
+                        Column {
+                            Text("글자 및 아이콘 크기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            listOf("small" to "작게", "normal" to "보통", "large" to "크게").forEach { (scale, label) ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth().clickable { onUiScaleChange(scale) }
+                                ) {
+                                    RadioButton(selected = currentUiScale == scale, onClick = { onUiScaleChange(scale) })
+                                    Text(label)
+                                }
+                            }
+                        }
+
+                        HorizontalDivider()
+
+                        // 3. 테마 설정
                         Column {
                             Text("테마 설정", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.height(8.dp))
